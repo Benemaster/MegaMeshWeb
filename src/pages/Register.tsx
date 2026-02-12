@@ -15,7 +15,7 @@ export const Register = () => {
     setError('');
     
     if (password !== confirmPassword) {
-      setError('Passwˆrter stimmen nicht ¸berein.');
+      setError('Passw√∂rter stimmen nicht √ºberein.');
       return;
     }
     
@@ -87,7 +87,7 @@ export const Register = () => {
             </div>
             <div>
               <label htmlFor="confirmPassword" className="sr-only">
-                Passwort best‰tigen
+                Passwort best√§tigen
               </label>
               <input
                 id="confirmPassword"
@@ -95,7 +95,7 @@ export const Register = () => {
                 type="password"
                 required
                 className="appearance-none relative block w-full px-3 py-2 border border-gray-300 placeholder-gray-500 text-gray-900 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm"
-                placeholder="Passwort best‰tigen"
+                placeholder="Passwort best√§tigen"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
               />

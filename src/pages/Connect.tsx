@@ -16,29 +16,33 @@ export const Connect = () => {
     try {
       if (connectionType === 'usb') {
         if (!('serial' in navigator)) {
-          setError('Web Serial API wird von diesem Browser nicht unterstützt.');
+          setError('Web Serial API wird von diesem Browser nicht unterstÃ¼tzt.');
           return;
         }
 
         const port = await (navigator as any).serial.requestPort();
         await port.open({ baudRate: 115200 });
         
-        const generatedNodeId = 'NODE-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+        const generatedNodeId = 'NODE-' + Math.random().toString(36).slice(2, 11).toUpperCase();
         setIsConnected(true);
         setNodeId(generatedNodeId);
         localStorage.setItem('nodeId', generatedNodeId);
         localStorage.setItem('connectionType', connectionType);
       } else {
         if (!('bluetooth' in navigator)) {
-          setError('Web Bluetooth API wird von diesem Browser nicht unterstützt.');
+          setError('Web Bluetooth API wird von diesem Browser nicht unterstÃ¼tzt.');
           return;
         }
 
         const device = await (navigator as any).bluetooth.requestDevice({
           filters: [{ services: ['battery_service'] }],
         });
-        
-        const generatedNodeId = 'NODE-' + Math.random().toString(36).substr(2, 9).toUpperCase();
+
+        if (device) {
+          console.log('Bluetooth device selected:', device.name || device.id);
+        }
+
+        const generatedNodeId = 'NODE-' + Math.random().toString(36).slice(2, 11).toUpperCase();
         setIsConnected(true);
         setNodeId(generatedNodeId);
         localStorage.setItem('nodeId', generatedNodeId);
@@ -97,7 +101,7 @@ export const Connect = () => {
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3">
-                  Verbindungstyp wählen
+                  Verbindungstyp wÃ¤hlen
                 </label>
                 <div className="flex space-x-4">
                   <label className="inline-flex items-center">
@@ -132,11 +136,11 @@ export const Connect = () => {
 
               <div className="border-t pt-6">
                 <h4 className="text-sm font-medium text-gray-900 mb-3">
-                  Browser-Kompatibilität
+                  Browser-KompatibilitÃ¤t
                 </h4>
                 <div className="text-sm text-gray-600 space-y-2">
-                  <p>USB Serial: {('serial' in navigator) ? '? Unterstützt' : '? Nicht unterstützt'}</p>
-                  <p>Bluetooth: {('bluetooth' in navigator) ? '? Unterstützt' : '? Nicht unterstützt'}</p>
+                  <p>USB Serial: {('serial' in navigator) ? '? UnterstÃ¼tzt' : '? Nicht unterstÃ¼tzt'}</p>
+                  <p>Bluetooth: {('bluetooth' in navigator) ? '? UnterstÃ¼tzt' : '? Nicht unterstÃ¼tzt'}</p>
                 </div>
               </div>
             </div>

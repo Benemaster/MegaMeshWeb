@@ -17,7 +17,7 @@ export const Login = () => {
       await login(username, password);
       navigate('/connect');
     } catch (err) {
-      setError('Login fehlgeschlagen. Bitte überprüfe deine Zugangsdaten.');
+      setError('Login fehlgeschlagen. Bitte Ã¼berprÃ¼fe deine Zugangsdaten.');
     }
   };
 

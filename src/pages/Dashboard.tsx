@@ -77,7 +77,7 @@ export const Dashboard = () => {
             </>
           ) : (
             <div className="flex-1 flex items-center justify-center text-gray-500">
-              Wähle einen Kontakt aus, um zu chatten
+              WÃ¤hle einen Kontakt aus, um zu chatten
             </div>
           )}
         </div>
