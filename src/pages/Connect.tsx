@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { BluetoothConnection } from '../components/BluetoothConnection';
+import type { BluetoothEvent } from '../types/bluetooth';
 
 export const Connect = () => {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [isConnected, setIsConnected] = useState(false);
   const [nodeId, setNodeId] = useState('');
-  const [connectionType, setConnectionType] = useState<'usb' | 'bluetooth'>('usb');
+  const [connectionType, setConnectionType] = useState<'usb' | 'bluetooth'>('bluetooth');
   const [error, setError] = useState('');
+  const [showBluetoothDetail, setShowBluetoothDetail] = useState(false);
 
   const handleConnect = async () => {
     setError('');
@@ -29,28 +32,17 @@ export const Connect = () => {
         localStorage.setItem('nodeId', generatedNodeId);
         localStorage.setItem('connectionType', connectionType);
       } else {
-        if (!('bluetooth' in navigator)) {
-          setError('Web Bluetooth API wird von diesem Browser nicht unterstützt.');
-          return;
-        }
-
-        const device = await (navigator as any).bluetooth.requestDevice({
-          filters: [{ services: ['battery_service'] }],
-        });
-
-        if (device) {
-          console.log('Bluetooth device selected:', device.name || device.id);
-        }
-
-        const generatedNodeId = 'NODE-' + Math.random().toString(36).slice(2, 11).toUpperCase();
-        setIsConnected(true);
-        setNodeId(generatedNodeId);
-        localStorage.setItem('nodeId', generatedNodeId);
-        localStorage.setItem('connectionType', connectionType);
+        // For Bluetooth, show the detailed connection component
+        setShowBluetoothDetail(true);
       }
     } catch (err) {
       setError('Verbindung fehlgeschlagen: ' + (err as Error).message);
     }
+  };
+
+  const handleBluetoothEvent = (event: BluetoothEvent) => {
+    console.log('Received Bluetooth event:', event);
+   //Ui logic possible  Flavius bitte mach das für mich
   };
 
   const handleDisconnect = () => {
@@ -97,7 +89,7 @@ export const Connect = () => {
             </div>
           )}
 
-          {!isConnected ? (
+          {!isConnected && !showBluetoothDetail ? (
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3">
@@ -139,15 +131,26 @@ export const Connect = () => {
                   Browser-Kompatibilität
                 </h4>
                 <div className="text-sm text-gray-600 space-y-2">
-                  <p>USB Serial: {('serial' in navigator) ? '? Unterstützt' : '? Nicht unterstützt'}</p>
-                  <p>Bluetooth: {('bluetooth' in navigator) ? '? Unterstützt' : '? Nicht unterstützt'}</p>
+                  <p>USB Serial: {('serial' in navigator) ? '✓ Unterstützt' : '✗ Nicht unterstützt'}</p>
+                  <p>Bluetooth: {('bluetooth' in navigator) ? '✓ Unterstützt' : '✗ Nicht unterstützt'}</p>
                 </div>
               </div>
+            </div>
+          ) : showBluetoothDetail ? (
+            <div className="space-y-6">
+              <BluetoothConnection onEventReceived={handleBluetoothEvent} />
+              
+              <button
+                onClick={() => setShowBluetoothDetail(false)}
+                className="w-full px-6 py-3 bg-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              >
+                Zurück zur Auswahl
+              </button>
             </div>
           ) : (
             <div className="space-y-6">
               <div className="bg-green-50 border border-green-400 text-green-700 px-4 py-4 rounded">
-                <p className="font-medium text-lg mb-2">? Verbunden</p>
+                <p className="font-medium text-lg mb-2">✓ Verbunden</p>
                 <p className="text-sm">Node-ID: <span className="font-mono">{nodeId}</span></p>
                 <p className="text-sm">Typ: {connectionType === 'usb' ? 'USB Serial' : 'Bluetooth'}</p>
               </div>

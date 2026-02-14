@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ESP32 Bluetooth Test</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu,
+          sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        padding: 20px;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+      }
+
+      .container {
+        background: white;
+        border-radius: 12px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+        max-width: 600px;
+        width: 100%;
+        padding: 30px;
+      }
+
+      h1 {
+        color: #333;
+        margin-bottom: 10px;
+        font-size: 24px;
+      }
+
+      .subtitle {
+        color: #666;
+        margin-bottom: 25px;
+        font-size: 14px;
+      }
+
+      .status {
+        padding: 15px;
+        border-radius: 8px;
+        margin-bottom: 20px;
+        font-size: 14px;
+      }
+
+      .status.disconnected {
+        background: #fee;
+        color: #c00;
+        border: 1px solid #fcc;
+      }
+
+      .status.connected {
+        background: #efe;
+        color: #060;
+        border: 1px solid #cfc;
+      }
+
+      .status.info {
+        background: #eef;
+        color: #006;
+        border: 1px solid #ccf;
+      }
+
+      button {
+        width: 100%;
+        padding: 12px 20px;
+        border: none;
+        border-radius: 6px;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        margin-bottom: 10px;
+      }
+
+      button:hover:not(:disabled) {
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+      }
+
+      button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+
+      .btn-primary {
+        background: #667eea;
+        color: white;
+      }
+
+      .btn-danger {
+        background: #f56565;
+        color: white;
+      }
+
+      .btn-secondary {
+        background: #cbd5e0;
+        color: #2d3748;
+      }
+
+      .command-section {
+        margin-top: 20px;
+        padding-top: 20px;
+        border-top: 1px solid #e2e8f0;
+      }
+
+      .input-group {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+      }
+
+      input[type="text"] {
+        flex: 1;
+        padding: 10px;
+        border: 1px solid #cbd5e0;
+        border-radius: 6px;
+        font-size: 14px;
+      }
+
+      input[type="text"]:focus {
+        outline: none;
+        border-color: #667eea;
+        box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+      }
+
+      .events-log {
+        background: #f7fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 15px;
+        max-height: 300px;
+        overflow-y: auto;
+        font-family: "Courier New", monospace;
+        font-size: 12px;
+        margin-top: 15px;
+      }
+
+      .event-item {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 4px;
+        padding: 10px;
+        margin-bottom: 8px;
+      }
+
+      .event-item:last-child {
+        margin-bottom: 0;
+      }
+
+      .event-header {
+        color: #718096;
+        font-size: 10px;
+        margin-bottom: 5px;
+      }
+
+      .event-data {
+        color: #2d3748;
+        word-break: break-all;
+      }
+
+      .log-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+
+      .log-title {
+        font-weight: 600;
+        color: #2d3748;
+        font-size: 14px;
+      }
+
+      .clear-btn {
+        background: none;
+        border: none;
+        color: #667eea;
+        cursor: pointer;
+        font-size: 12px;
+        padding: 4px 8px;
+        text-decoration: underline;
+      }
+
+      .device-info {
+        background: #f7fafc;
+        padding: 10px;
+        border-radius: 6px;
+        margin-bottom: 15px;
+        font-size: 13px;
+      }
+
+      .device-info div {
+        margin: 3px 0;
+      }
+
+      .device-info strong {
+        color: #2d3748;
+      }
+
+      .device-info span {
+        color: #4a5568;
+        font-family: "Courier New", monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>ESP32 Bluetooth Test</h1>
+      <p class="subtitle">
+        Connect to your ESP32-LoRaCfg device via Web Bluetooth
+      </p>
+
+      <div id="status" class="status info">
+        Ready to connect. Click the button below to scan for devices.
+      </div>
+
+      <div id="deviceInfo" style="display: none"></div>
+
+      <div id="connectionSection">
+        <button id="connectBtn" class="btn-primary" onclick="connect()">
+          Connect to ESP32
+        </button>
+      </div>
+
+      <div id="commandSection" class="command-section" style="display: none">
+        <form onsubmit="sendCommand(event)">
+          <div class="input-group">
+            <input
+              type="text"
+              id="commandInput"
+              placeholder="Enter CLI command (e.g., status, config, help)"
+              autocomplete="off"
+            />
+            <button
+              type="submit"
+              class="btn-primary"
+              style="width: auto; padding: 10px 20px"
+            >
+              Send
+            </button>
+          </div>
+        </form>
+
+        <div class="log-header">
+          <span class="log-title">Events Log</span>
+          <button class="clear-btn" onclick="clearEvents()">Clear</button>
+        </div>
+        <div id="eventsLog" class="events-log">
+          <div style="color: #a0aec0; text-align: center">No events yet...</div>
+        </div>
+
+        <button
+          class="btn-danger"
+          onclick="disconnect()"
+          style="margin-top: 20px"
+        >
+          Disconnect
+        </button>
+      </div>
+    </div>
+
+    <script>
+      let device = null;
+      let server = null;
+      let rxCharacteristic = null;
+      let txCharacteristic = null;
+      let eventCount = 0;
+
+      const SERVICE_UUID_PATTERN = "E50E24DCCA9E";
+      const DEVICE_NAME_PREFIX = "ESP32-LoRaCfg";
+
+      function updateStatus(message, type = "info") {
+        const statusEl = document.getElementById("status");
+        statusEl.textContent = message;
+        statusEl.className = `status ${type}`;
+      }
+
+      function showDeviceInfo(deviceName, deviceId) {
+        const deviceInfoEl = document.getElementById("deviceInfo");
+        deviceInfoEl.innerHTML = `
+        <div class="device-info">
+          <div><strong>Device:</strong> <span>${deviceName}</span></div>
+          <div><strong>ID:</strong> <span>${deviceId}</span></div>
+        </div>
+      `;
+        deviceInfoEl.style.display = "block";
+      }
+
+      function addEvent(eventData) {
+        eventCount++;
+        const eventsLog = document.getElementById("eventsLog");
+
+        if (eventCount === 1) {
+          eventsLog.innerHTML = "";
+        }
+
+        const eventItem = document.createElement("div");
+        eventItem.className = "event-item";
+
+        const timestamp = new Date().toLocaleTimeString();
+        eventItem.innerHTML = `
+        <div class="event-header">Event #${eventCount} - ${timestamp}</div>
+        <div class="event-data">${JSON.stringify(eventData, null, 2)}</div>
+      `;
+
+        eventsLog.insertBefore(eventItem, eventsLog.firstChild);
+      }
+
+      function clearEvents() {
+        eventCount = 0;
+        document.getElementById("eventsLog").innerHTML =
+          '<div style="color: #a0aec0; text-align: center;">No events yet...</div>';
+      }
+
+      async function connect() {
+        try {
+          updateStatus("Scanning for devices...", "info");
+
+          // Fixed (well-known) NUS-like service UUID
+          const FIXED_SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
+
+          // Request device with name filter and the fixed service UUID
+          device = await navigator.bluetooth.requestDevice({
+            filters: [{ namePrefix: DEVICE_NAME_PREFIX }],
+            optionalServices: [FIXED_SERVICE_UUID],
+          });
+
+          // Listen for disconnection
+          device.addEventListener("gattserverdisconnected", onDisconnected);
+
+          updateStatus("Connecting to GATT server...", "info");
+          server = await device.gatt.connect();
+
+          updateStatus("Discovering services...", "info");
+
+          // Try to get the fixed service first (most reliable)
+          let chosenService = null;
+          try {
+            chosenService = await server.getPrimaryService(FIXED_SERVICE_UUID);
+            console.log("Found fixed service:", chosenService.uuid);
+          } catch (e) {
+            // Fallback: enumerate all services and find one matching the pattern
+            console.warn("Fixed service not found, using fallback...");
+            const services = await server.getPrimaryServices();
+            console.log(
+              "Available services:",
+              services.map((s) => s.uuid),
+            );
+
+            chosenService = services.find((s) =>
+              s.uuid.toUpperCase().endsWith(SERVICE_UUID_PATTERN),
+            );
+
+            if (!chosenService && services.length > 0) {
+              chosenService = services[0];
+              console.warn(
+                "Using first service as fallback:",
+                chosenService.uuid,
+              );
+            }
+          }
+
+          if (!chosenService) {
+            throw new Error("No suitable GATT service found");
+          }
+
+          updateStatus("Getting characteristics...", "info");
+          const characteristics = await chosenService.getCharacteristics();
+          console.log(
+            "Available characteristics:",
+            characteristics.map((c) => ({
+              uuid: c.uuid,
+              props: c.properties,
+            })),
+          );
+
+          // Find RX (write) and TX (notify) characteristics
+          rxCharacteristic = characteristics.find((c) => c.properties.write);
+          txCharacteristic = characteristics.find((c) => c.properties.notify);
+
+          if (!rxCharacteristic || !txCharacteristic) {
+            throw new Error("Required characteristics (RX/TX) not found");
+          }
+
+          // Start notifications
+          await txCharacteristic.startNotifications();
+          txCharacteristic.addEventListener(
+            "characteristicvaluechanged",
+            handleNotification,
+          );
+
+          // Update UI
+          updateStatus("Connected successfully!", "connected");
+          showDeviceInfo(device.name, device.id);
+          document.getElementById("connectionSection").style.display = "none";
+          document.getElementById("commandSection").style.display = "block";
+
+          console.log("Connected to:", device.name);
+        } catch (error) {
+          console.error("Connection failed:", error);
+          updateStatus(`Connection failed: ${error.message}`, "disconnected");
+          cleanup();
+        }
+      }
+
+      async function disconnect() {
+        try {
+          if (server && server.connected) {
+            server.disconnect();
+          }
+          cleanup();
+          updateStatus("Disconnected", "disconnected");
+        } catch (error) {
+          console.error("Disconnect error:", error);
+          cleanup();
+        }
+      }
+
+      function onDisconnected() {
+        console.log("Device disconnected");
+        updateStatus("Device disconnected", "disconnected");
+        cleanup();
+      }
+
+      function cleanup() {
+        server = null;
+        rxCharacteristic = null;
+        txCharacteristic = null;
+        document.getElementById("connectionSection").style.display = "block";
+        document.getElementById("commandSection").style.display = "none";
+        document.getElementById("deviceInfo").style.display = "none";
+        document.getElementById("commandInput").value = "";
+      }
+
+      function handleNotification(event) {
+        const value = event.target.value;
+        const text = new TextDecoder().decode(value);
+
+        console.log("Received notification:", text);
+
+        try {
+          const jsonEvent = JSON.parse(text);
+          addEvent(jsonEvent);
+        } catch (error) {
+          console.error("Failed to parse JSON:", error);
+          addEvent({ raw: text, error: "Invalid JSON" });
+        }
+      }
+
+      async function sendCommand(event) {
+        event.preventDefault();
+
+        const input = document.getElementById("commandInput");
+        const command = input.value.trim();
+
+        if (!command) return;
+
+        try {
+          const data = new TextEncoder().encode(command + "\n");
+          await rxCharacteristic.writeValue(data);
+
+          console.log("Sent command:", command);
+          input.value = "";
+
+          // Optional: Show command in events log
+          addEvent({ type: "command", sent: command });
+        } catch (error) {
+          console.error("Failed to send command:", error);
+          updateStatus(
+            `Failed to send command: ${error.message}`,
+            "disconnected",
+          );
+        }
+      }
+
+      // Check browser compatibility
+      window.addEventListener("load", () => {
+        if (!("bluetooth" in navigator)) {
+          updateStatus(
+            "Web Bluetooth not supported in this browser",
+            "disconnected",
+          );
+          document.getElementById("connectBtn").disabled = true;
+        }
+      });
+    </script>
+  </body>
+</html>
