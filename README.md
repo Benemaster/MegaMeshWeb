@@ -8,3 +8,4 @@
 - Axios
 - Web Serial API
 - Web Bluetooth API
+- Wide Browser compatability
