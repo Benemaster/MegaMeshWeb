@@ -42,7 +42,14 @@ export const Connect = () => {
 
   const handleBluetoothEvent = (event: BluetoothEvent) => {
     console.log('Received Bluetooth event:', event);
-   //Ui logic possible  Flavius bitte mach das für mich
+  };
+
+  const handleMeshStarted = (meshNodeId: number) => {
+    const id = String(meshNodeId);
+    setNodeId(id);
+    setIsConnected(true);
+    localStorage.setItem('nodeId', id);
+    localStorage.setItem('connectionType', 'bluetooth');
   };
 
   const handleDisconnect = () => {
@@ -138,7 +145,7 @@ export const Connect = () => {
             </div>
           ) : showBluetoothDetail ? (
             <div className="space-y-6">
-              <BluetoothConnection onEventReceived={handleBluetoothEvent} />
+              <BluetoothConnection onEventReceived={handleBluetoothEvent} onMeshStarted={handleMeshStarted} />
               
               <button
                 onClick={() => setShowBluetoothDetail(false)}
