@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { BluetoothConnection } from '../components/BluetoothConnection';
+import { SerialConnection } from '../components/SerialConnection';
 import type { BluetoothEvent } from '../types/bluetooth';
 
 export const Connect = () => {
@@ -12,28 +13,19 @@ export const Connect = () => {
   const [connectionType, setConnectionType] = useState<'usb' | 'bluetooth'>('bluetooth');
   const [error, setError] = useState('');
   const [showBluetoothDetail, setShowBluetoothDetail] = useState(false);
+  const [showSerialDetail, setShowSerialDetail] = useState(false);
 
   const handleConnect = async () => {
     setError('');
     
     try {
       if (connectionType === 'usb') {
-        if (!('serial' in navigator)) {
-          setError('Web Serial API wird von diesem Browser nicht unterstützt.');
-          return;
-        }
-
-        const port = await (navigator as any).serial.requestPort();
-        await port.open({ baudRate: 115200 });
-        
-        const generatedNodeId = 'NODE-' + Math.random().toString(36).slice(2, 11).toUpperCase();
-        setIsConnected(true);
-        setNodeId(generatedNodeId);
-        localStorage.setItem('nodeId', generatedNodeId);
-        localStorage.setItem('connectionType', connectionType);
+        setShowSerialDetail(true);
+        setShowBluetoothDetail(false);
       } else {
         // For Bluetooth, show the detailed connection component
         setShowBluetoothDetail(true);
+        setShowSerialDetail(false);
       }
     } catch (err) {
       setError('Verbindung fehlgeschlagen: ' + (err as Error).message);
@@ -48,8 +40,10 @@ export const Connect = () => {
     const id = String(meshNodeId);
     setNodeId(id);
     setIsConnected(true);
+    setShowBluetoothDetail(false);
+    setShowSerialDetail(false);
     localStorage.setItem('nodeId', id);
-    localStorage.setItem('connectionType', 'bluetooth');
+    localStorage.setItem('connectionType', connectionType);
   };
 
   const handleDisconnect = () => {
@@ -96,7 +90,7 @@ export const Connect = () => {
             </div>
           )}
 
-          {!isConnected && !showBluetoothDetail ? (
+          {!isConnected && !showBluetoothDetail && !showSerialDetail ? (
             <div className="space-y-6">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-3">
@@ -111,7 +105,7 @@ export const Connect = () => {
                       onChange={(e) => setConnectionType(e.target.value as 'usb')}
                       className="form-radio text-primary-600 h-4 w-4"
                     />
-                    <span className="ml-2">USB Serial</span>
+                    <span className="ml-2">USB-Seriell</span>
                   </label>
                   <label className="inline-flex items-center">
                     <input
@@ -154,12 +148,23 @@ export const Connect = () => {
                 Zurück zur Auswahl
               </button>
             </div>
+          ) : showSerialDetail ? (
+            <div className="space-y-6">
+              <SerialConnection onEventReceived={handleBluetoothEvent} onMeshStarted={handleMeshStarted} />
+
+              <button
+                onClick={() => setShowSerialDetail(false)}
+                className="w-full px-6 py-3 bg-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+              >
+                Zurück zur Auswahl
+              </button>
+            </div>
           ) : (
             <div className="space-y-6">
               <div className="bg-green-50 border border-green-400 text-green-700 px-4 py-4 rounded">
                 <p className="font-medium text-lg mb-2">✓ Verbunden</p>
                 <p className="text-sm">Node-ID: <span className="font-mono">{nodeId}</span></p>
-                <p className="text-sm">Typ: {connectionType === 'usb' ? 'USB Serial' : 'Bluetooth'}</p>
+                <p className="text-sm">Typ: {connectionType === 'usb' ? 'USB-Seriell' : 'Bluetooth'}</p>
               </div>
 
               <button

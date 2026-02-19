@@ -41,6 +41,7 @@ export interface ConfigField {
 export interface SetupInfoEvent {
   evt: 'setup_info';
   device: string;
+  first_setup?: boolean;
   fields: ConfigField[];
   cmds: string;
 }

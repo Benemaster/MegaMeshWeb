@@ -29,7 +29,7 @@ export const Login = () => {
             MegaMesh
           </h2>
           <p className="mt-2 text-center text-sm text-gray-600">
-            Melde dich in deinem Account an
+            Melde dich in deinem Konto an
           </p>
         </div>
         <form className="mt-8 space-y-6" onSubmit={handleSubmit}>
@@ -82,7 +82,7 @@ export const Login = () => {
           
           <div className="text-center">
             <Link to="/register" className="text-primary-600 hover:text-primary-500">
-              Noch kein Account? Registrieren
+              Noch kein Konto? Registrieren
             </Link>
           </div>
         </form>

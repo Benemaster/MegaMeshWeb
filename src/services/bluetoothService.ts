@@ -6,6 +6,7 @@ class BluetoothServiceImpl {
   private device: BluetoothDevice | null = null;
   private server: BluetoothRemoteGATTServer | null = null;
   private characteristics: BluetoothCharacteristics | null = null;
+  private boundDisconnectHandler: (() => void) | null = null;
 
   // Multi-listener maps — keyed by symbol so removal is O(1) and no ordering issues
   private eventListeners = new Map<symbol, EventListener>();
@@ -15,23 +16,29 @@ class BluetoothServiceImpl {
   private rxBuffer = '';
 
   private readonly FIXED_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-  private readonly RX_CHAR_UUID = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
-  private readonly TX_CHAR_UUID = '6e400003-b5a3-f393-e0a9-e50e24dcca9e';
   private readonly DEVICE_NAME_PREFIX = 'ESP32-LoRaCfg';
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
   async connect(): Promise<void> {
     try {
+      if (this.device?.gatt?.connected) {
+        this.device.gatt.disconnect();
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+
+      this.cleanup();
+
       this.device = await navigator.bluetooth.requestDevice({
         filters: [{ namePrefix: this.DEVICE_NAME_PREFIX }],
         optionalServices: [this.FIXED_SERVICE_UUID],
       });
 
       console.log('Selected device:', this.device.name || this.device.id);
-      this.device.addEventListener('gattserverdisconnected', this.handleDisconnect.bind(this));
+      this.attachDisconnectListener();
 
       await this.connectGatt();
+
       console.log('✓ Bluetooth connection established and notifications started');
     } catch (error) {
       console.error('Bluetooth connection failed:', error);
@@ -117,22 +124,19 @@ class BluetoothServiceImpl {
 
   private async connectGatt(): Promise<void> {
     if (!this.device) throw new Error('No device selected');
+    if (!this.device.gatt) throw new Error('Selected device does not expose GATT');
 
-    this.server = await this.device.gatt!.connect();
+    this.server = await this.connectGattWithRetry(this.device.gatt);
     console.log('Connected to GATT server');
 
-    const service = await this.server.getPrimaryService(this.FIXED_SERVICE_UUID);
-
-    let rxChar: BluetoothRemoteGATTCharacteristic | null = null;
-    let txChar: BluetoothRemoteGATTCharacteristic | null = null;
-    try {
-      rxChar = await service.getCharacteristic(this.RX_CHAR_UUID);
-      txChar = await service.getCharacteristic(this.TX_CHAR_UUID);
-    } catch {
-      const chars = await service.getCharacteristics();
-      rxChar = chars.find(c => c.properties.write || c.properties.writeWithoutResponse) ?? null;
-      txChar = chars.find(c => c.properties.notify) ?? null;
+    const service = await this.resolveMessagingService();
+    if (!service) {
+      throw new Error('No compatible BLE service found on device');
     }
+
+    const chars = await service.getCharacteristics();
+    const rxChar = chars.find(c => c.properties.write || c.properties.writeWithoutResponse) ?? null;
+    const txChar = chars.find(c => c.properties.notify) ?? null;
 
     if (!rxChar || !txChar) {
       throw new Error('Required characteristics (RX/TX) not found');
@@ -143,6 +147,79 @@ class BluetoothServiceImpl {
 
     await txChar.startNotifications();
     txChar.addEventListener('characteristicvaluechanged', this.handleNotification.bind(this));
+  }
+
+  private async connectGattWithRetry(gatt: BluetoothRemoteGATTServer): Promise<BluetoothRemoteGATTServer> {
+    let lastError: unknown;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        if (gatt.connected) {
+          gatt.disconnect();
+          await new Promise(resolve => setTimeout(resolve, 250));
+        }
+
+        return await gatt.connect();
+      } catch (error) {
+        lastError = error;
+        try {
+          if (gatt.connected) {
+            gatt.disconnect();
+          }
+        } catch {
+          // ignore disconnect cleanup errors
+        }
+
+        if (attempt < 2) {
+          await new Promise(resolve => setTimeout(resolve, 350));
+        }
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('Connection attempt failed');
+  }
+
+  private attachDisconnectListener(): void {
+    if (!this.device) return;
+
+    if (this.boundDisconnectHandler) {
+      this.device.removeEventListener('gattserverdisconnected', this.boundDisconnectHandler);
+    }
+
+    this.boundDisconnectHandler = () => {
+      this.handleDisconnect().catch(err => {
+        console.warn('Disconnect handler failed:', err);
+      });
+    };
+
+    this.device.addEventListener('gattserverdisconnected', this.boundDisconnectHandler);
+  }
+
+  private async resolveMessagingService(): Promise<BluetoothRemoteGATTService | null> {
+    if (!this.server) return null;
+
+    try {
+      const fixed = await this.server.getPrimaryService(this.FIXED_SERVICE_UUID);
+      if (await this.serviceSupportsMessaging(fixed)) {
+        return fixed;
+      }
+    } catch {
+      // fall through to broad scan
+    }
+
+    const services = await this.server.getPrimaryServices();
+    for (const service of services) {
+      if (await this.serviceSupportsMessaging(service)) {
+        return service;
+      }
+    }
+
+    return null;
+  }
+
+  private async serviceSupportsMessaging(service: BluetoothRemoteGATTService): Promise<boolean> {
+    const chars = await service.getCharacteristics();
+    const hasRx = chars.some(c => c.properties.write || c.properties.writeWithoutResponse);
+    const hasTx = chars.some(c => c.properties.notify);
+    return hasRx && hasTx;
   }
 
   private emit(evt: BluetoothEvent): void {
@@ -207,33 +284,18 @@ class BluetoothServiceImpl {
   }
 
   private async handleDisconnect(): Promise<void> {
-    console.log('Device disconnected — attempting auto-reconnect…');
+    console.log('Device disconnected');
     this.server = null;
     this.characteristics = null;
-
-    if (!this.device) {
-      this.emitDisconnect();
-      return;
-    }
-
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      await new Promise(r => setTimeout(r, 2000));
-      try {
-        await this.connectGatt();
-        console.log('Auto-reconnect succeeded on attempt', attempt);
-        this.emit({ evt: 'reconnected' });
-        return;
-      } catch (err) {
-        console.warn(`Auto-reconnect attempt ${attempt} failed:`, err);
-      }
-    }
-
-    console.error('Auto-reconnect failed after 3 attempts');
-    this.cleanup();
     this.emitDisconnect();
   }
 
   private cleanup(): void {
+    if (this.device && this.boundDisconnectHandler) {
+      this.device.removeEventListener('gattserverdisconnected', this.boundDisconnectHandler);
+    }
+
+    this.boundDisconnectHandler = null;
     this.server = null;
     this.characteristics = null;
     this.rxBuffer = '';

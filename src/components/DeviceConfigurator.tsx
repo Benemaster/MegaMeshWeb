@@ -1,23 +1,21 @@
-import { useState, useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { bluetoothService } from '../services/bluetoothService';
-import type { BluetoothEvent, ConfigField, SetupInfoEvent, CfgStatusEvent } from '../types/bluetooth';
+import { serialService } from '../services/serialService';
+import type { BluetoothEvent, CfgStatusEvent, ConfigField, SetupInfoEvent } from '../types/bluetooth';
 
-// RadioLib error code lookup
 const RADIO_ERR: Record<string, string> = {
-  '-2': 'ERR_UNKNOWN',
-  '-4': 'ERR_CHIP_NOT_FOUND',
-  '-6': 'ERR_INVALID_BANDWIDTH',
-  '-7': 'ERR_INVALID_SPREADING_FACTOR',
-  '-701': 'ERR_SPI_CMD_FAILED',
+  '-2': 'Allgemeiner Funkfehler (Pins, TCXO und Verdrahtung prüfen)',
+  '-3': 'Ungültige Frequenz',
+  '-4': 'Funkchip nicht gefunden',
+  '-5': 'Ungültige Ausgangsleistung',
+  '-6': 'Ungültige Bandbreite',
+  '-7': 'Ungültiger Spreading Factor',
+  '-8': 'Ungültige Coding Rate',
+  '-701': 'SPI-Kommunikation fehlgeschlagen',
+  '-706': 'SPI Timeout',
 };
 
-type ConfigPhase =
-  | 'idle'
-  | 'config_mode'
-  | 'saving'
-  | 'initing'
-  | 'done'
-  | 'error';
+type ConfigPhase = 'idle' | 'config_mode' | 'saving' | 'initing' | 'done' | 'error';
 
 interface FieldState {
   value: string;
@@ -28,9 +26,65 @@ interface FieldState {
 
 interface Props {
   onMeshStarted?: (nodeId: number) => void;
+  transport?: 'bluetooth' | 'serial';
 }
 
-export const DeviceConfigurator = ({ onMeshStarted }: Props) => {
+interface SetupStep {
+  title: string;
+  description: string;
+  keys: string[];
+}
+
+type QuickDeviceProfile = 'heltec_v3' | 'megamesh';
+
+const FIELD_LABELS: Record<string, string> = {
+  device: 'Gerätetyp',
+  freq: 'Frequenz',
+  bw: 'Bandbreite',
+  sf: 'Spreading Factor',
+  cr: 'Coding Rate',
+  pwr: 'Sendeleistung',
+  sw: 'Sync Word',
+  preamble: 'Preamble-Länge',
+  tcxo: 'TCXO-Spannung',
+  dio2: 'DIO2 als RF-Switch',
+  sclk: 'SCLK-Pin',
+  miso: 'MISO-Pin',
+  mosi: 'MOSI-Pin',
+  nss: 'NSS/CS-Pin',
+  rst: 'RESET-Pin',
+  dio0: 'DIO0/BUSY-Pin',
+  dio1: 'DIO1/IRQ-Pin',
+  weather: 'Wettermodus',
+  weather_interval: 'Wetter-Intervall',
+  weather_sensors: 'Anzahl Wetter-Sensoren',
+};
+
+const STEPS: SetupStep[] = [
+  {
+    title: '1. Hardware',
+    description: 'Wähle den Board-Typ und prüfe die Pinbelegung.',
+    keys: ['device', 'sclk', 'miso', 'mosi', 'nss', 'rst', 'dio0', 'dio1'],
+  },
+  {
+    title: '2. Funk',
+    description: 'Lege LoRa-Parameter über Auswahllisten fest.',
+    keys: ['freq', 'bw', 'sf', 'cr', 'pwr', 'sw', 'preamble', 'tcxo', 'dio2'],
+  },
+  {
+    title: '3. Wetter',
+    description: 'Aktiviere optional den Wettermodus und Intervall.',
+    keys: ['weather', 'weather_interval', 'weather_sensors'],
+  },
+  {
+    title: '4. Start',
+    description: 'Konfiguration speichern, Funk initialisieren und Mesh starten.',
+    keys: [],
+  },
+];
+
+export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: Props) => {
+  const commandService = transport === 'serial' ? serialService : bluetoothService;
   const [phase, setPhase] = useState<ConfigPhase>('idle');
   const [meshRunning, setMeshRunning] = useState(false);
   const [setupInfo, setSetupInfo] = useState<SetupInfoEvent | null>(null);
@@ -39,26 +93,73 @@ export const DeviceConfigurator = ({ onMeshStarted }: Props) => {
   const [radioError, setRadioError] = useState<string | null>(null);
   const [nodeId, setNodeId] = useState<number | null>(null);
   const [log, setLog] = useState<BluetoothEvent[]>([]);
-  const [pendingAck, setPendingAck] = useState<string | null>(null); // key waiting for 'ok'
+  const [pendingAck, setPendingAck] = useState<string | null>(null);
+  const [activeStep, setActiveStep] = useState(0);
+  const [isFirstSetup, setIsFirstSetup] = useState(false);
+  const [showAdvancedFirstSetup, setShowAdvancedFirstSetup] = useState(false);
+  const [quickDevice, setQuickDevice] = useState<QuickDeviceProfile>('heltec_v3');
+  const [quickBusy, setQuickBusy] = useState(false);
+  const [quickError, setQuickError] = useState('');
+  const [initWarning, setInitWarning] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const logEndRef = useRef<HTMLDivElement>(null);
 
-  // Scroll log to bottom on new entries
   useEffect(() => {
     logEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [log]);
 
-  // Register event handler once
   useEffect(() => {
-    bluetoothService.onEvent(handleEvent);
-    // Send 'info' to request setup_info if device is already connected
-    if (bluetoothService.isConnected()) {
-      bluetoothService.sendCommand('info').catch(() => {});
+    const unsubscribe = commandService.addEventListener(handleEvent);
+    if (commandService.isConnected()) {
+      commandService.sendCommand('setup').catch(() => {});
+      setTimeout(() => {
+        commandService.sendCommand('info').catch(() => {});
+      }, 120);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    return () => unsubscribe();
+  }, [commandService]);
+
+  const fieldsByKey = useMemo(() => {
+    const map = new Map<string, ConfigField>();
+    if (!setupInfo) return map;
+    for (const field of setupInfo.fields) {
+      map.set(field.k, field);
+    }
+    return map;
+  }, [setupInfo]);
+
+  const extraFields = useMemo(() => {
+    if (!setupInfo) return [] as ConfigField[];
+    const defined = new Set(STEPS.flatMap(s => s.keys));
+    return setupInfo.fields.filter(f => !defined.has(f.k));
+  }, [setupInfo]);
 
   function addLog(evt: BluetoothEvent) {
     setLog(prev => [...prev.slice(-99), evt]);
+  }
+
+  function initFieldStates(si: SetupInfoEvent) {
+    setFieldStates(prev => {
+      const next: Record<string, FieldState> = { ...prev };
+      for (const f of si.fields) {
+        const key = f.k;
+        const incoming = String(f.v);
+        const existing = prev[key];
+
+        if (!existing) {
+          next[key] = { value: incoming, dirty: false, acking: false, error: '' };
+          continue;
+        }
+
+        if (existing.dirty || existing.acking) {
+          next[key] = existing;
+          continue;
+        }
+
+        next[key] = { ...existing, value: incoming };
+      }
+      return next;
+    });
   }
 
   function handleEvent(evt: BluetoothEvent) {
@@ -66,27 +167,33 @@ export const DeviceConfigurator = ({ onMeshStarted }: Props) => {
 
     switch (evt.evt) {
       case 'first_boot':
+        setIsFirstSetup(true);
+        setShowAdvancedFirstSetup(false);
+        setPhase('config_mode');
+        commandService.sendCommand('setup').catch(() => {});
+        break;
+
       case 'config_mode':
         setPhase('config_mode');
-        // Request full field manifest
-        bluetoothService.sendCommand('info').catch(() => {});
+        break;
+
+      case 'serial_setup_ready':
+      case 'setup_already':
+        setPhase('config_mode');
         break;
 
       case 'boot':
-        // Normal boot — still request info so we can show current config
-        bluetoothService.sendCommand('info').catch(() => {});
+        setIsFirstSetup(false);
         break;
 
       case 'setup_info': {
         const si = evt as SetupInfoEvent;
         setSetupInfo(si);
-        setPhase('config_mode');
-        // Initialise field states from current values
-        const states: Record<string, FieldState> = {};
-        for (const f of si.fields) {
-          states[f.k] = { value: String(f.v), dirty: false, acking: false, error: '' };
+        if (typeof si.first_setup === 'boolean') {
+          setIsFirstSetup(si.first_setup);
         }
-        setFieldStates(states);
+        setPhase('config_mode');
+        initFieldStates(si);
         break;
       }
 
@@ -95,8 +202,7 @@ export const DeviceConfigurator = ({ onMeshStarted }: Props) => {
         break;
 
       case 'defaults_applied':
-        // Firmware applied device defaults — request updated info
-        bluetoothService.sendCommand('info').catch(() => {});
+        commandService.sendCommand('info').catch(() => {});
         break;
 
       case 'ok':
@@ -113,15 +219,35 @@ export const DeviceConfigurator = ({ onMeshStarted }: Props) => {
         if (pendingAck) {
           setFieldStates(prev => ({
             ...prev,
-            [pendingAck]: { ...prev[pendingAck], acking: false, error: 'Unknown command' },
+            [pendingAck]: { ...prev[pendingAck], acking: false, error: 'Befehl nicht erkannt' },
           }));
           setPendingAck(null);
         }
         break;
 
       case 'cfg_saved':
-        setPhase('initing');
-        bluetoothService.sendCommand('init').catch(() => {});
+        setCfgStatus(prev => ({
+          evt: 'cfg_status',
+          saved: true,
+          radio_ok: prev?.radio_ok ?? false,
+          hint: prev?.hint ?? '',
+        }));
+        setPhase('config_mode');
+        break;
+
+      case 'cfg_staged':
+        setCfgStatus(prev => ({
+          evt: 'cfg_status',
+          saved: true,
+          radio_ok: prev?.radio_ok ?? false,
+          hint: 'Konfiguration vorgemerkt',
+        }));
+        setPhase('config_mode');
+        break;
+
+      case 'setup_required':
+        setPhase('config_mode');
+        commandService.sendCommand('setup').catch(() => {});
         break;
 
       case 'auto_init':
@@ -129,249 +255,315 @@ export const DeviceConfigurator = ({ onMeshStarted }: Props) => {
         break;
 
       case 'radio_ready':
-        setCfgStatus(prev => prev ? { ...prev, radio_ok: true } : null);
+        setCfgStatus(prev => ({
+          evt: 'cfg_status',
+          saved: prev?.saved ?? false,
+          radio_ok: true,
+          hint: prev?.hint ?? '',
+        }));
+        setInitWarning(null);
+        setPhase('config_mode');
+        break;
+
+      case 'radio_not_ready':
+        setInitWarning('Funk noch nicht bereit. Bitte zuerst initialisieren.');
+        setPhase('config_mode');
         break;
 
       case 'radio_err': {
         const code = String(evt.code ?? '');
-        const label = RADIO_ERR[code] ?? `code ${code}`;
-        setRadioError(`Radio init failed: ${label}`);
-        setPhase('error');
+        const label = RADIO_ERR[code] ?? `Code ${code}`;
+        const text = `Funk-Initialisierung fehlgeschlagen: ${label}`;
+        const isUserInitFlow = phase === 'initing' || quickBusy;
+
+        if (isUserInitFlow) {
+          setRadioError(text);
+          setQuickBusy(false);
+          setPhase('error');
+        } else {
+          setInitWarning(text);
+          setPhase('config_mode');
+        }
         break;
       }
 
-      case 'config_done':
-        // Config loop exited, wait for mesh_started
-        break;
-
       case 'mesh_started':
+        setQuickBusy(false);
         setNodeId(evt.nodeId);
         setMeshRunning(true);
         setPhase('done');
         if (onMeshStarted) onMeshStarted(evt.nodeId);
         break;
 
+      case 'autostart_ok':
+        setQuickBusy(false);
+        setPhase('done');
+        break;
+
+      case 'autostart_err':
+        setQuickBusy(false);
+        setQuickError('Auto-Start fehlgeschlagen. Bitte erweitertes Setup nutzen.');
+        setPhase('config_mode');
+        break;
+
       case 'reconnected':
-        // Auto-reconnect happened — re-request setup info
-        bluetoothService.sendCommand('info').catch(() => {});
+        commandService.sendCommand('info').catch(() => {});
         break;
     }
   }
 
-  // ── Field change handlers ──────────────────────────────────────────────────
+  function fieldLabel(field: ConfigField): string {
+    return FIELD_LABELS[field.k] ?? field.k;
+  }
 
-  function handleFieldChange(key: string, value: string) {
-    setFieldStates(prev => ({
-      ...prev,
-      [key]: { ...prev[key], value, dirty: true, error: '' },
-    }));
+  function getOptions(field: ConfigField): string[] {
+    if (field.opts) return field.opts.split('|');
+
+    if (field.type === 'pin') {
+      return Array.from({ length: 40 }, (_, i) => String(i));
+    }
+
+    if (field.k === 'weather_interval') {
+      return ['5000', '10000', '30000', '60000', '300000'];
+    }
+
+    if (field.min !== undefined && field.max !== undefined) {
+      const min = Math.ceil(field.min);
+      const max = Math.floor(field.max);
+      if (Number.isInteger(min) && Number.isInteger(max) && max - min <= 12) {
+        return Array.from({ length: max - min + 1 }, (_, i) => String(min + i));
+      }
+    }
+
+    return [];
+  }
+
+  function normalizeLabel(field: ConfigField, option: string): string {
+    if (field.k === 'device') {
+      if (option === 'heltec' || option === 'heltec_v3') return 'Heltec V3 (GPIO 8-14 LoRa)';
+      if (option === 'wroom' || option === 'megamesh') return 'MegaMesh-Gerät';
+    }
+    if (field.k === 'weather' || field.k === 'dio2') {
+      return option === '1' ? 'Ein' : 'Aus';
+    }
+    return option;
   }
 
   function validateField(field: ConfigField, value: string): string {
+    if (field.k === 'weather_sensors') return '';
+
     if (field.type === 'hex') {
-      if (!/^0x[0-9A-Fa-f]{1,2}$/.test(value)) return 'Must be 0x00–0xFF';
-    } else if (field.type === 'pin' || (field.min !== undefined && field.max !== undefined)) {
-      const n = Number(value);
-      if (isNaN(n)) return 'Must be a number';
+      if (!/^0x[0-9A-Fa-f]{1,2}$/.test(value)) return 'Format muss 0x00 bis 0xFF sein';
+      return '';
+    }
+
+    if (field.type === 'pin' || (field.min !== undefined && field.max !== undefined)) {
+      const num = Number(value);
+      if (Number.isNaN(num)) return 'Bitte eine Zahl wählen';
       const min = field.type === 'pin' ? 0 : (field.min ?? 0);
       const max = field.type === 'pin' ? 39 : (field.max ?? Infinity);
-      if (n < min || n > max) return `Must be ${min}–${max}`;
+      if (num < min || num > max) return `Wert muss zwischen ${min} und ${max} liegen`;
     }
+
     return '';
   }
 
-  async function sendFieldSet(field: ConfigField) {
-    const state = fieldStates[field.k];
-    if (!state) return;
-    const err = validateField(field, state.value);
+  async function applyField(field: ConfigField, value: string) {
+    const err = validateField(field, value);
     if (err) {
-      setFieldStates(prev => ({ ...prev, [field.k]: { ...prev[field.k], error: err } }));
+      setFieldStates(prev => ({ ...prev, [field.k]: { ...prev[field.k], value, error: err } }));
       return;
     }
-    setFieldStates(prev => ({ ...prev, [field.k]: { ...prev[field.k], acking: true, error: '' } }));
-    setPendingAck(field.k);
-    try {
-      await bluetoothService.sendCommand(`set ${field.k} ${state.value}`);
-    } catch {
-      setFieldStates(prev => ({ ...prev, [field.k]: { ...prev[field.k], acking: false, error: 'Send failed' } }));
-      setPendingAck(null);
-    }
-  }
 
-  async function handleDeviceSelect(value: string) {
-    handleFieldChange('device', value);
-    try {
-      await bluetoothService.sendCommand(`device ${value}`);
-    } catch {
-      /* ignore */
+    setFieldStates(prev => ({
+      ...prev,
+      [field.k]: { ...prev[field.k], value, dirty: true, acking: field.k !== 'device', error: '' },
+    }));
+
+    if (field.k === 'device') {
+      await commandService.sendCommand(`device ${value}`).catch(() => {
+        setFieldStates(prev => ({
+          ...prev,
+          [field.k]: { ...prev[field.k], acking: false, error: 'Senden fehlgeschlagen' },
+        }));
+      });
+      return;
     }
+
+    setPendingAck(field.k);
+    await commandService.sendCommand(`set ${field.k} ${value}`).catch(() => {
+      setFieldStates(prev => ({
+        ...prev,
+        [field.k]: { ...prev[field.k], acking: false, error: 'Senden fehlgeschlagen' },
+      }));
+      setPendingAck(null);
+    });
   }
 
   async function handleSave() {
     setPhase('saving');
-    try {
-      await bluetoothService.sendCommand('save');
-    } catch {
+    await commandService.sendCommand('setup').catch(() => {});
+    await new Promise(resolve => setTimeout(resolve, 120));
+    await commandService.sendCommand('save').catch(() => {
       setPhase('config_mode');
-    }
+    });
+  }
+
+  async function handleInit() {
+    setInitWarning(null);
+    setPhase('initing');
+    await commandService.sendCommand('init').catch(() => {
+      setPhase('config_mode');
+    });
+  }
+
+  async function handleStartMesh() {
+    await commandService.sendCommand('startmesh').catch(() => {});
   }
 
   async function handleReboot() {
-    if (window.confirm('Reboot the device?')) {
-      await bluetoothService.sendCommand('reboot').catch(() => {});
+    if (window.confirm('Gerät jetzt neu starten?')) {
+      await commandService.sendCommand('reboot').catch(() => {});
     }
   }
 
-  // ── Render helpers ─────────────────────────────────────────────────────────
+  async function handleQuickFirstSetup() {
+    setQuickError('');
+    setInitWarning(null);
+    setQuickBusy(true);
+
+    const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+    try {
+      await commandService.sendCommand(`device ${quickDevice}`);
+      await wait(180);
+      await commandService.sendCommand('save');
+      await wait(180);
+      setPhase('initing');
+      await commandService.sendCommand('init');
+    } catch (err) {
+      setQuickBusy(false);
+      setPhase('config_mode');
+      setQuickError(`Schnell-Setup fehlgeschlagen: ${(err as Error).message}`);
+    }
+  }
+
+  async function handleAutoStart() {
+    setQuickError('');
+    setInitWarning(null);
+    setQuickBusy(true);
+    try {
+      await commandService.sendCommand(`device ${quickDevice}`);
+      await new Promise(resolve => setTimeout(resolve, 140));
+      await commandService.sendCommand('autostart');
+    } catch (err) {
+      setQuickBusy(false);
+      setQuickError(`Auto-Start fehlgeschlagen: ${(err as Error).message}`);
+    }
+  }
 
   function renderField(field: ConfigField) {
-    const state = fieldStates[field.k] ?? { value: String(field.v), dirty: false, acking: false, error: '' };
-    const isDeviceField = field.k === 'device';
+    const state = fieldStates[field.k] ?? {
+      value: String(field.v),
+      dirty: false,
+      acking: false,
+      error: '',
+    };
 
-    const labelCls = 'block text-xs font-medium text-gray-500 uppercase tracking-wider mb-1';
-    const inputCls = `w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-      state.error ? 'border-red-400' : 'border-gray-300'
-    } ${state.acking ? 'opacity-50' : ''}`;
-
-    const unitLabel = field.unit ? (
-      <span className="ml-2 text-xs text-gray-400">{field.unit}</span>
-    ) : null;
-
-    const ackSpinner = state.acking ? (
-      <span className="ml-2 inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-    ) : null;
-
-    const ackDone = !state.acking && !state.dirty && !state.error && state.value !== String(field.v) ? (
-      <span className="ml-2 text-green-600 text-xs">✓</span>
-    ) : null;
-
-    let input: React.ReactElement;
-
-    if (field.opts) {
-      const opts = field.opts.split('|');
-      if (isDeviceField) {
-        // Device selector triggers device command immediately
-        input = (
-          <select
-            className={inputCls}
-            value={state.value}
-            onChange={e => handleDeviceSelect(e.target.value)}
-            disabled={state.acking}
-          >
-            {opts.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
-        );
-      } else if (opts.length <= 4) {
-        // Segmented control for small option sets
-        input = (
-          <div className="flex rounded-md overflow-hidden border border-gray-300">
-            {opts.map(o => (
-              <button
-                key={o}
-                type="button"
-                className={`flex-1 px-3 py-2 text-sm transition-colors ${
-                  state.value === o
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-white text-gray-700 hover:bg-gray-50'
-                } ${state.acking ? 'opacity-50 cursor-not-allowed' : ''}`}
-                disabled={state.acking}
-                onClick={() => {
-                  handleFieldChange(field.k, o);
-                  setFieldStates(prev => ({
-                    ...prev,
-                    [field.k]: { ...prev[field.k], value: o, dirty: true },
-                  }));
-                  // Auto-send for segmented controls
-                  const updated = { ...field, v: o };
-                  const s = { ...fieldStates[field.k], value: o, dirty: true, acking: true, error: '' };
-                  setFieldStates(prev => ({ ...prev, [field.k]: s }));
-                  setPendingAck(field.k);
-                  bluetoothService.sendCommand(`set ${field.k} ${o}`).catch(() => {
-                    setFieldStates(prev => ({ ...prev, [field.k]: { ...prev[field.k], acking: false, error: 'Send failed' } }));
-                    setPendingAck(null);
-                  });
-                  // Suppress unused warning
-                  void updated;
-                }}
-              >
-                {o}
-              </button>
-            ))}
-          </div>
-        );
-      } else {
-        // Dropdown for larger sets
-        input = (
-          <select
-            className={inputCls}
-            value={state.value}
-            disabled={state.acking}
-            onChange={e => handleFieldChange(field.k, e.target.value)}
-            onBlur={() => sendFieldSet(field)}
-          >
-            {opts.map(o => <option key={o} value={o}>{o}</option>)}
-          </select>
-        );
-      }
-    } else {
-      input = (
-        <input
-          type={field.type === 'hex' ? 'text' : 'number'}
-          className={inputCls}
-          value={state.value}
-          disabled={state.acking}
-          min={field.type === 'pin' ? 0 : field.min}
-          max={field.type === 'pin' ? 39 : field.max}
-          step={field.unit === 'MHz' || field.unit === 'kHz' || field.unit === 'V' ? 'any' : 1}
-          onChange={e => handleFieldChange(field.k, e.target.value)}
-          onBlur={() => sendFieldSet(field)}
-        />
-      );
-    }
+    const options = getOptions(field);
+    const isReadonly = field.k === 'weather_sensors';
 
     return (
-      <div key={field.k} className="bg-white rounded-lg border border-gray-200 p-4">
-        <div className={labelCls}>
-          {field.k}
-          {unitLabel}
-          {ackSpinner}
-          {ackDone}
+      <div key={field.k} className="rounded-lg border border-gray-200 p-4">
+        <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+          <span>{fieldLabel(field)}</span>
+          {field.unit && <span className="text-gray-400">({field.unit})</span>}
+          {state.acking && <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />}
         </div>
-        {input}
-        {state.error && (
-          <p className="mt-1 text-xs text-red-600">{state.error}</p>
+
+        {isReadonly ? (
+          <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">{state.value}</div>
+        ) : options.length > 0 ? (
+          options.length <= 6 ? (
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {options.map(option => (
+                <button
+                  key={`${field.k}-${option}`}
+                  type="button"
+                  disabled={state.acking}
+                  onClick={() => applyField(field, option)}
+                  className={`rounded-md border px-3 py-2 text-sm transition-colors ${
+                    state.value === option
+                      ? 'border-blue-600 bg-blue-600 text-white'
+                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                  } ${state.acking ? 'cursor-not-allowed opacity-60' : ''}`}
+                >
+                  {normalizeLabel(field, option)}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <select
+              className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                state.error ? 'border-red-400' : 'border-gray-300'
+              }`}
+              value={state.value}
+              disabled={state.acking}
+              onChange={e => applyField(field, e.target.value)}
+            >
+              {options.map(option => (
+                <option key={`${field.k}-${option}`} value={option}>
+                  {normalizeLabel(field, option)}
+                </option>
+              ))}
+            </select>
+          )
+        ) : (
+          <input
+            type={field.type === 'hex' ? 'text' : 'number'}
+            className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+              state.error ? 'border-red-400' : 'border-gray-300'
+            }`}
+            value={state.value}
+            disabled={state.acking}
+            min={field.type === 'pin' ? 0 : field.min}
+            max={field.type === 'pin' ? 39 : field.max}
+            step={field.unit === 'MHz' || field.unit === 'kHz' || field.unit === 'V' ? 'any' : 1}
+            onChange={e => {
+              const value = e.target.value;
+              setFieldStates(prev => ({
+                ...prev,
+                [field.k]: { ...prev[field.k], value, dirty: true, error: '' },
+              }));
+            }}
+            onBlur={e => applyField(field, e.target.value)}
+          />
         )}
-        {state.dirty && !state.acking && !isDeviceField && !field.opts && (
-          <button
-            type="button"
-            onClick={() => sendFieldSet(field)}
-            className="mt-2 text-xs text-blue-600 underline"
-          >
-            Apply
-          </button>
-        )}
+
+        {state.error && <p className="mt-2 text-xs text-red-600">{state.error}</p>}
       </div>
     );
   }
 
-  // ── Render ─────────────────────────────────────────────────────────────────
+  function stepFields(step: SetupStep): ConfigField[] {
+    if (!setupInfo) return [];
+    return step.keys.map(key => fieldsByKey.get(key)).filter((f): f is ConfigField => !!f);
+  }
 
   if (phase === 'done') {
     return (
       <div className="space-y-4">
-        <div className="bg-green-50 border border-green-400 text-green-800 rounded-lg p-6 text-center">
-          <div className="text-3xl mb-2">✓</div>
-          <p className="text-lg font-semibold">Configuration complete</p>
-          {nodeId !== null && (
-            <p className="mt-1 text-sm font-mono">Node ID: {nodeId}</p>
-          )}
-          <p className="mt-2 text-sm">Mesh is running.</p>
+        <div className="rounded-lg border border-green-400 bg-green-50 p-6 text-center text-green-800">
+          <div className="mb-2 text-3xl">✓</div>
+          <p className="text-lg font-semibold">Setup abgeschlossen</p>
+          {nodeId !== null && <p className="mt-1 font-mono text-sm">Node-ID: {nodeId}</p>}
+          <p className="mt-2 text-sm">Mesh läuft.</p>
         </div>
         <button
           onClick={handleReboot}
-          className="w-full px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 text-sm"
+          className="w-full rounded-md bg-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-300"
         >
-          Reboot device
+          Gerät neu starten
         </button>
         <EventLog log={log} logEndRef={logEndRef} />
       </div>
@@ -381,15 +573,18 @@ export const DeviceConfigurator = ({ onMeshStarted }: Props) => {
   if (phase === 'error') {
     return (
       <div className="space-y-4">
-        <div className="bg-red-50 border border-red-400 text-red-800 rounded-lg p-4">
-          <p className="font-semibold">Error</p>
-          <p className="text-sm mt-1">{radioError ?? 'Unknown error'}</p>
+        <div className="rounded-lg border border-red-400 bg-red-50 p-4 text-red-800">
+          <p className="font-semibold">Fehler</p>
+          <p className="mt-1 text-sm">{radioError ?? 'Unbekannter Fehler'}</p>
         </div>
         <button
-          onClick={() => { setPhase('config_mode'); setRadioError(null); }}
-          className="w-full px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 text-sm"
+          onClick={() => {
+            setPhase('config_mode');
+            setRadioError(null);
+          }}
+          className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
         >
-          Back to configuration
+          Zurück zum Setup
         </button>
         <EventLog log={log} logEndRef={logEndRef} />
       </div>
@@ -400,8 +595,8 @@ export const DeviceConfigurator = ({ onMeshStarted }: Props) => {
     return (
       <div className="space-y-4">
         <div className="flex items-center space-x-3 text-gray-500">
-          <span className="inline-block w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-          <span className="text-sm">Waiting for device setup info…</span>
+          <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
+          <span className="text-sm">Warte auf Setup-Daten vom Gerät …</span>
         </div>
         <EventLog log={log} logEndRef={logEndRef} />
       </div>
@@ -409,104 +604,311 @@ export const DeviceConfigurator = ({ onMeshStarted }: Props) => {
   }
 
   const isBusy = phase === 'saving' || phase === 'initing';
+  const currentStep = STEPS[activeStep];
+  const currentFields = stepFields(currentStep);
+  const compactKeys = new Set(['device', 'freq', 'bw', 'sf', 'cr', 'pwr']);
+  const visibleCurrentFields = showAdvanced ? currentFields : currentFields.filter(field => compactKeys.has(field.k));
+  const fieldsToRender = visibleCurrentFields.length > 0 ? visibleCurrentFields : currentFields;
+  const savedLabel = cfgStatus ? (cfgStatus.saved ? 'ja' : 'nein') : 'unbekannt';
+  const radioLabel = cfgStatus ? (cfgStatus.radio_ok ? 'bereit' : 'nicht bereit') : 'unbekannt';
+
+  if (isFirstSetup && !showAdvancedFirstSetup) {
+    return (
+      <div className="space-y-6">
+        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+          <h3 className="text-base font-semibold text-blue-900">Vereinfachtes Erstsetup</h3>
+          <p className="mt-1 text-sm text-blue-800">
+            Wähle dein Gerät. Die Standardwerte werden automatisch gesetzt, gespeichert und der Funk wird initialisiert.
+          </p>
+          <p className="mt-1 text-xs text-blue-700">
+            Heltec V3 Pinout: NSS=GPIO8, SCK=GPIO9, MOSI=GPIO10, MISO=GPIO11, RST=GPIO12, BUSY=GPIO13, DIO1=GPIO14.
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            disabled={quickBusy}
+            onClick={() => setQuickDevice('heltec_v3')}
+            className={`rounded-md border px-4 py-3 text-left ${
+              quickDevice === 'heltec_v3'
+                ? 'border-blue-600 bg-blue-600 text-white'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <p className="font-medium">Heltec V3</p>
+            <p className={`text-xs ${quickDevice === 'heltec_v3' ? 'text-blue-100' : 'text-gray-500'}`}>
+              Für Heltec WiFi LoRa 32 V3
+            </p>
+          </button>
+
+          <button
+            type="button"
+            disabled={quickBusy}
+            onClick={() => setQuickDevice('megamesh')}
+            className={`rounded-md border px-4 py-3 text-left ${
+              quickDevice === 'megamesh'
+                ? 'border-blue-600 bg-blue-600 text-white'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <p className="font-medium">MegaMesh-Gerät</p>
+            <p className={`text-xs ${quickDevice === 'megamesh' ? 'text-blue-100' : 'text-gray-500'}`}>
+              Für dein eigenes MegaMesh-Hardwareprofil
+            </p>
+          </button>
+        </div>
+
+        {phase === 'initing' && (
+          <div className="flex items-center space-x-2 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+            <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+            <span>Funkmodul wird initialisiert …</span>
+          </div>
+        )}
+
+        {quickError && (
+          <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+            {quickError}
+          </div>
+        )}
+
+        <button
+          type="button"
+          disabled={quickBusy || isBusy}
+          onClick={handleQuickFirstSetup}
+          className="w-full rounded-md bg-green-600 px-4 py-3 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {quickBusy ? 'Setup läuft …' : 'Schnell-Setup starten'}
+        </button>
+
+        <button
+          type="button"
+          disabled={quickBusy || isBusy}
+          onClick={() => setShowAdvancedFirstSetup(true)}
+          className="w-full rounded-md bg-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+        >
+          Erweiterte Einstellungen anzeigen
+        </button>
+
+        <EventLog log={log} logEndRef={logEndRef} />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Status bar */}
+      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
+        <h3 className="text-base font-semibold text-blue-900">Schnellstart (empfohlen)</h3>
+        <p className="mt-1 text-sm text-blue-800">Wähle ein Geräteprofil und starte Speichern + LoRa-Init + Mesh mit einem Klick.</p>
+
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <button
+            type="button"
+            disabled={quickBusy || isBusy}
+            onClick={() => setQuickDevice('heltec_v3')}
+            className={`rounded-md border px-4 py-3 text-left ${
+              quickDevice === 'heltec_v3'
+                ? 'border-blue-600 bg-blue-600 text-white'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <p className="font-medium">Heltec V3</p>
+            <p className={`text-xs ${quickDevice === 'heltec_v3' ? 'text-blue-100' : 'text-gray-500'}`}>
+              Standard-Pinout Heltec
+            </p>
+          </button>
+
+          <button
+            type="button"
+            disabled={quickBusy || isBusy}
+            onClick={() => setQuickDevice('megamesh')}
+            className={`rounded-md border px-4 py-3 text-left ${
+              quickDevice === 'megamesh'
+                ? 'border-blue-600 bg-blue-600 text-white'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            <p className="font-medium">MegaMesh-Gerät</p>
+            <p className={`text-xs ${quickDevice === 'megamesh' ? 'text-blue-100' : 'text-gray-500'}`}>
+              Eigenes Hardwareprofil
+            </p>
+          </button>
+        </div>
+
+        <button
+          type="button"
+          disabled={quickBusy || isBusy}
+          onClick={handleAutoStart}
+          className="mt-3 w-full rounded-md bg-green-600 px-4 py-3 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {quickBusy ? 'Auto-Start läuft …' : 'Auto-Start: Speichern + LoRa + Mesh'}
+        </button>
+
+        {quickError && <p className="mt-2 text-sm text-red-700">{quickError}</p>}
+      </div>
+
       <div className="flex flex-wrap gap-3 text-xs font-mono">
-        <span className={`px-2 py-1 rounded ${cfgStatus?.saved ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
-          saved: {cfgStatus?.saved ? 'yes' : 'no'}
+        <span className={`rounded px-2 py-1 ${!cfgStatus ? 'bg-gray-100 text-gray-600' : cfgStatus.saved ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+          gespeichert: {savedLabel}
         </span>
-        <span className={`px-2 py-1 rounded ${cfgStatus?.radio_ok ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
-          radio: {cfgStatus?.radio_ok ? 'ok' : 'not ready'}
+        <span className={`rounded px-2 py-1 ${!cfgStatus ? 'bg-gray-100 text-gray-600' : cfgStatus.radio_ok ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+          funk: {radioLabel}
         </span>
-        <span className="px-2 py-1 rounded bg-gray-100 text-gray-600">
-          mesh: {meshRunning ? 'running' : 'stopped'}
+        <span className="rounded bg-gray-100 px-2 py-1 text-gray-600">
+          mesh: {meshRunning ? 'läuft' : 'unbekannt/gestoppt'}
         </span>
       </div>
 
-      {/* Phase banners */}
+      <div className="flex items-center justify-between rounded border border-gray-200 bg-gray-50 px-3 py-2">
+        <p className="text-sm text-gray-700">Ansicht</p>
+        <button
+          type="button"
+          onClick={() => setShowAdvanced(v => !v)}
+          className="rounded-md bg-white px-3 py-1 text-xs text-gray-700 border border-gray-300 hover:bg-gray-100"
+        >
+          {showAdvanced ? 'Einfach' : 'Erweitert'}
+        </button>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {STEPS.map((step, idx) => (
+          <button
+            key={step.title}
+            type="button"
+            onClick={() => setActiveStep(idx)}
+            className={`rounded-md border px-3 py-2 text-sm ${
+              idx === activeStep
+                ? 'border-blue-600 bg-blue-600 text-white'
+                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+            }`}
+          >
+            {step.title}
+          </button>
+        ))}
+      </div>
+
+      <div className="rounded-lg border border-gray-200 p-4">
+        <h3 className="text-sm font-semibold text-gray-900">{currentStep.title}</h3>
+        <p className="mt-1 text-sm text-gray-600">{currentStep.description}</p>
+      </div>
+
+      {initWarning && (
+        <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+          {initWarning}
+        </div>
+      )}
+
       {phase === 'saving' && (
-        <div className="flex items-center space-x-2 text-blue-700 bg-blue-50 border border-blue-200 rounded p-3 text-sm">
-          <span className="inline-block w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <span>Saving configuration…</span>
+        <div className="flex items-center space-x-2 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+          <span>Konfiguration wird gespeichert …</span>
         </div>
       )}
+
       {phase === 'initing' && (
-        <div className="flex items-center space-x-2 text-blue-700 bg-blue-50 border border-blue-200 rounded p-3 text-sm">
-          <span className="inline-block w-3 h-3 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
-          <span>Initialising radio…</span>
+        <div className="flex items-center space-x-2 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+          <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+          <span>Funkmodul wird initialisiert …</span>
         </div>
       )}
 
-      {/* Field grid */}
-      <div>
-        <h3 className="text-sm font-semibold text-gray-700 mb-3">Device Configuration</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {setupInfo.fields.map(f => renderField(f))}
+      {activeStep < STEPS.length - 1 ? (
+        <>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {fieldsToRender.map(field => renderField(field))}
+          </div>
+
+          {showAdvanced && activeStep === 2 && extraFields.length > 0 && (
+            <div>
+              <h4 className="mb-2 text-sm font-semibold text-gray-700">Weitere Werte</h4>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{extraFields.map(field => renderField(field))}</div>
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              disabled={activeStep === 0}
+              onClick={() => setActiveStep(v => Math.max(0, v - 1))}
+              className="flex-1 rounded-md bg-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              Zurück
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveStep(v => Math.min(STEPS.length - 1, v + 1))}
+              className="flex-1 rounded-md bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700"
+            >
+              Weiter
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <button
+              disabled={isBusy}
+              onClick={handleSave}
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              1) In Flash speichern
+            </button>
+            <button
+              disabled={isBusy || !cfgStatus?.saved}
+              onClick={handleInit}
+              title={!cfgStatus?.saved ? 'Bitte zuerst speichern' : ''}
+              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              2) Funk initialisieren
+            </button>
+            <button
+              disabled={isBusy || !cfgStatus?.radio_ok}
+              onClick={handleStartMesh}
+              title={!cfgStatus?.radio_ok ? 'Funk noch nicht bereit' : ''}
+              className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              3) Mesh starten
+            </button>
+          </div>
+
+          <div className="flex gap-3">
+            <button
+              type="button"
+              onClick={() => setActiveStep(STEPS.length - 2)}
+              className="flex-1 rounded-md bg-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-300"
+            >
+              Zurück zu Schritt 3
+            </button>
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={handleReboot}
+              className="flex-1 rounded-md bg-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+            >
+              Gerät neu starten
+            </button>
+            {transport === 'bluetooth' && (
+              <button
+                type="button"
+                disabled={isBusy}
+                onClick={async () => {
+                  if (window.confirm('Bluetooth wird ausgeschaltet und die Verbindung getrennt. Fortfahren?')) {
+                    await commandService.sendCommand('bt off').catch(() => {});
+                  }
+                }}
+                className="flex-1 rounded-md bg-orange-100 px-4 py-2 text-sm text-orange-700 hover:bg-orange-200 disabled:opacity-50"
+              >
+                Bluetooth aus
+              </button>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      {/* Action buttons */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <button
-          disabled={isBusy}
-          onClick={handleSave}
-          className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-        >
-          Save to flash
-        </button>
-        <button
-          disabled={isBusy || !cfgStatus?.saved}
-          onClick={async () => {
-            setPhase('initing');
-            await bluetoothService.sendCommand('init').catch(() => setPhase('config_mode'));
-          }}
-          className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-md hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-          title={!cfgStatus?.saved ? 'Save first' : ''}
-        >
-          Init radio
-        </button>
-        <button
-          disabled={isBusy || !cfgStatus?.radio_ok}
-          onClick={async () => {
-            await bluetoothService.sendCommand('startmesh').catch(() => {});
-          }}
-          className="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed text-sm font-medium"
-          title={!cfgStatus?.radio_ok ? 'Radio not ready' : ''}
-        >
-          Start mesh
-        </button>
-      </div>
-
-      <div className="flex gap-3">
-        <button
-          onClick={handleReboot}
-          disabled={isBusy}
-          className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 disabled:opacity-50 text-sm"
-        >
-          Reboot
-        </button>
-        <button
-          onClick={async () => {
-            if (window.confirm('Turning BT off will disconnect you. Continue?')) {
-              await bluetoothService.sendCommand('bt off').catch(() => {});
-            }
-          }}
-          disabled={isBusy}
-          className="flex-1 px-4 py-2 bg-orange-100 text-orange-700 rounded-md hover:bg-orange-200 disabled:opacity-50 text-sm"
-        >
-          BT off
-        </button>
-      </div>
-
-      {/* Event log */}
       <EventLog log={log} logEndRef={logEndRef} />
     </div>
   );
 };
-
-// ── Event log sub-component ────────────────────────────────────────────────
 
 interface EventLogProps {
   log: BluetoothEvent[];
@@ -515,20 +917,22 @@ interface EventLogProps {
 
 function EventLog({ log, logEndRef }: EventLogProps) {
   const [open, setOpen] = useState(false);
+
   if (log.length === 0) return null;
+
   return (
     <div className="border-t pt-4">
       <button
         type="button"
-        className="text-xs text-gray-500 underline mb-2"
+        className="mb-2 text-xs text-gray-500 underline"
         onClick={() => setOpen(v => !v)}
       >
-        {open ? 'Hide' : 'Show'} event log ({log.length})
+        {open ? 'Event-Log ausblenden' : 'Event-Log anzeigen'} ({log.length})
       </button>
       {open && (
-        <div className="bg-gray-900 rounded-lg p-3 max-h-48 overflow-y-auto font-mono text-xs">
+        <div className="max-h-48 overflow-y-auto rounded-lg bg-gray-900 p-3 font-mono text-xs">
           {log.map((evt, i) => (
-            <div key={i} className="text-green-400 py-0.5 border-b border-gray-800 last:border-0">
+            <div key={i} className="border-b border-gray-800 py-0.5 text-green-400 last:border-0">
               {JSON.stringify(evt)}
             </div>
           ))}
