@@ -6,6 +6,7 @@ export interface Message {
   timestamp: Date;
   status: 'pending' | 'sent' | 'delivered' | 'failed';
   via: 'radio' | 'backend';
+  encrypted?: boolean;
 }
 
 export interface Node {

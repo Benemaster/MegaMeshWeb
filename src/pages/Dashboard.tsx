@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { MessageList } from '../components/MessageList';
 import { MessageInput } from '../components/MessageInput';
 import { ContactList, type MeshContact } from '../components/ContactList';
@@ -8,15 +8,35 @@ import { bluetoothService } from '../services/bluetoothService';
 import { serialService } from '../services/serialService';
 import type { BluetoothEvent } from '../types/bluetooth';
 import type { Message } from '../types/messaging';
+import {
+  generateKeyHex,
+  encryptMessage,
+  decryptMessage,
+  isEncryptedMessage,
+  isValidKeyHex,
+} from '../utils/aes128';
 
-const normalizeNodeId = (value: string | number): string => String(value).trim();
+// ─── localStorage keys ────────────────────────────────────────────────────────
+const LS_MY_KEY = 'meshMyKey';
+const LS_PEER_KEYS = 'meshPeerKeys';
 
-const toNodeNumber = (value: string): number | null => {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  if (/^\d+$/.test(trimmed)) return Number(trimmed);
-  return null;
-};
+function loadPeerKeys(): Map<string, string> {
+  try {
+    const raw = localStorage.getItem(LS_PEER_KEYS);
+    if (!raw) return new Map();
+    return new Map(Object.entries(JSON.parse(raw) as Record<string, string>));
+  } catch {
+    return new Map();
+  }
+}
+
+function savePeerKeys(map: Map<string, string>): void {
+  localStorage.setItem(LS_PEER_KEYS, JSON.stringify(Object.fromEntries(map)));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+const normalizeNodeId = (value: string | number): string => String(value).trim().toLowerCase();
 
 export const Dashboard = () => {
   const { user, logout } = useAuth();
@@ -25,9 +45,22 @@ export const Dashboard = () => {
   const [selectedContact, setSelectedContact] = useState<string | null>(null);
   const [contacts, setContacts] = useState<MeshContact[]>([]);
   const [messagesByContact, setMessagesByContact] = useState<Record<string, Message[]>>({});
-  const [networkKey, setNetworkKey] = useState('');
   const [statusInfo, setStatusInfo] = useState('');
   const [isBusy, setIsBusy] = useState(false);
+
+  // AES-128 state — loaded from/persisted to localStorage
+  const [myKey, setMyKey] = useState<string>(() => localStorage.getItem(LS_MY_KEY) ?? '');
+  const [myKeyNodeId, setMyKeyNodeId] = useState<string>(
+    () => localStorage.getItem('nodeId') ?? '',
+  );
+  const [webPeerKeys, setWebPeerKeys] = useState<Map<string, string>>(loadPeerKeys);
+  const webPeerKeysRef = useRef(webPeerKeys);
+  const [peerKeyStatus, setPeerKeyStatus] = useState('');
+
+  // Keep ref in sync so async event handlers always see current keys
+  useEffect(() => {
+    webPeerKeysRef.current = webPeerKeys;
+  }, [webPeerKeys]);
 
   const nodeId = localStorage.getItem('nodeId');
   const connectionType = localStorage.getItem('connectionType');
@@ -45,13 +78,7 @@ export const Dashboard = () => {
       const existing = prev.find(item => item.id === id);
       if (existing) {
         return prev.map(item =>
-          item.id === id
-            ? {
-                ...item,
-                isOnline: isOnline || item.isOnline,
-                lastSeenMs,
-              }
-            : item,
+          item.id === id ? { ...item, isOnline: isOnline || item.isOnline, lastSeenMs } : item,
         );
       }
       return [{ id, name: `Node ${id}`, isOnline, lastSeenMs }, ...prev];
@@ -61,79 +88,112 @@ export const Dashboard = () => {
   useEffect(() => {
     const removeEvent = commandService.addEventListener((event: BluetoothEvent) => {
       switch (event.evt) {
+        case 'node_id': {
+          const hexId = (event.nodeId as number).toString(16);
+          localStorage.setItem('nodeId', hexId);
+          setMyKeyNodeId(hexId);
+          break;
+        }
+
         case 'peer_found': {
           const id = normalizeNodeId(event.id);
-          upsertContact(id, true, 0);
-          setStatusInfo(`Node ${id} gefunden`);
-          break;
-        }
-        case 'peers': {
-          const items = Array.isArray(event.items) ? event.items : [];
-          for (const item of items) {
-            const id = normalizeNodeId(item.id);
-            upsertContact(id, true, Number(item.ageMs ?? 0));
+          upsertContact(id, true, event.ageMs ?? 0);
+          if (!event.ageMs) {
+            setStatusInfo(`Node ${id} discovered (rssi=${event.rssi?.toFixed(0) ?? '?'} dBm)`);
           }
-          setStatusInfo(`${items.length} Peer(s) aktualisiert`);
           break;
         }
+
         case 'msg_rx': {
           const from = normalizeNodeId(event.from);
+          const raw = String(event.data ?? '');
           upsertContact(from, true, 0);
-          appendMessage(from, {
-            id: crypto.randomUUID(),
-            content: String(event.data ?? ''),
-            sender: from,
-            receiver: 'me',
-            timestamp: new Date(),
-            status: 'delivered',
-            via: 'radio',
-          });
+
+          // AES-128-GCM decryption if message is encrypted and we have the sender's key
+          if (isEncryptedMessage(raw)) {
+            const peerKey = webPeerKeysRef.current.get(from);
+            (async () => {
+              let displayContent: string;
+              let decrypted = false;
+              if (peerKey) {
+                const plain = await decryptMessage(raw, peerKey);
+                if (plain !== null) {
+                  displayContent = plain;
+                  decrypted = true;
+                } else {
+                  displayContent = '[AES-128 Entschlüsselung fehlgeschlagen — falscher Key?]';
+                }
+              } else {
+                displayContent = '[AES-128 verschlüsselt — kein Key für diesen Sender]';
+              }
+              appendMessage(from, {
+                id: crypto.randomUUID(),
+                content: displayContent,
+                sender: from,
+                receiver: 'me',
+                timestamp: new Date(),
+                status: 'delivered',
+                via: 'radio',
+                encrypted: decrypted,
+              });
+            })();
+          } else {
+            appendMessage(from, {
+              id: crypto.randomUUID(),
+              content: raw,
+              sender: from,
+              receiver: 'me',
+              timestamp: new Date(),
+              status: 'delivered',
+              via: 'radio',
+            });
+          }
           break;
         }
-        case 'mesh_key':
-          if (typeof event.v === 'string') {
-            setNetworkKey(event.v.toUpperCase());
-            setStatusInfo('Mesh-Key aktualisiert');
-          }
+
+        case 'scan_started':
+          setStatusInfo('Scan gesendet — warte auf Antworten…');
           break;
+
+        case 'key_saved':
+          setPeerKeyStatus(`Firmware-Key für Node ${event.nodeId} gespeichert`);
+          setStatusInfo(`Peer-Key für Node ${event.nodeId} in Firmware gespeichert`);
+          break;
+
+        case 'key_deleted':
+          setPeerKeyStatus(`Key für Node ${event.nodeId} gelöscht`);
+          break;
+
+        case 'weather_rx':
+          setStatusInfo(`Wetterdaten von Node ${event.from}: ${event.data}`);
+          break;
+
+        // Legacy firmware events
         case 'mesh_key_rx':
-          if (typeof event.v === 'string') {
-            setNetworkKey(event.v.toUpperCase());
-          }
           setStatusInfo(`Mesh-Key von Node ${event.from} empfangen`);
           break;
-        case 'mesh_key_ack':
-          setStatusInfo(`Node ${event.from} hat den Key bestätigt`);
-          break;
-        case 'mesh_key_tx':
-          setStatusInfo(`Key an Node ${event.dst} gesendet`);
-          break;
-        case 'mesh_key_tx_err':
-          setStatusInfo(`Key-Senden zu Node ${event.dst} fehlgeschlagen`);
-          break;
         case 'msg_tx_err':
-          setStatusInfo('Nachricht konnte nicht gesendet werden');
-          break;
         case 'radio_not_ready':
-          setStatusInfo('Funk ist noch nicht bereit. Bitte erst initialisieren und Mesh starten.');
+          setStatusInfo('Nachricht konnte nicht gesendet werden');
           break;
       }
     });
 
     const removeDisconnect = commandService.addDisconnectListener(() => {
-      setStatusInfo(connectionType === 'usb' ? 'USB-Verbindung getrennt' : 'Bluetooth-Verbindung getrennt');
+      setStatusInfo(
+        connectionType === 'usb' ? 'USB-Verbindung getrennt' : 'Bluetooth-Verbindung getrennt',
+      );
     });
 
     if (commandService.isConnected()) {
-      commandService.sendCommand('mesh peers').catch(() => {});
-      commandService.sendCommand('mesh key').catch(() => {});
+      commandService.sendCommand('/stations').catch(() => {});
     }
 
     const interval = setInterval(() => {
       if (commandService.isConnected()) {
-        commandService.sendCommand('mesh peers').catch(() => {});
+        commandService.sendCommand('/stations').catch(() => {});
       }
-    }, 15000);
+    }, 20000);
 
     return () => {
       removeEvent();
@@ -162,8 +222,8 @@ export const Dashboard = () => {
   const handleScanNodes = async () => {
     setIsBusy(true);
     try {
-      await commandService.sendCommand('mesh scan');
-      setStatusInfo('Node-Scan gestartet');
+      await commandService.sendCommand('/scan');
+      setStatusInfo('Scan gestartet…');
     } catch (error) {
       setStatusInfo(`Scan fehlgeschlagen: ${(error as Error).message}`);
     } finally {
@@ -174,9 +234,9 @@ export const Dashboard = () => {
   const handleRefreshPeers = async () => {
     setIsBusy(true);
     try {
-      await commandService.sendCommand('mesh peers');
+      await commandService.sendCommand('/stations');
     } catch (error) {
-      setStatusInfo(`Peers laden fehlgeschlagen: ${(error as Error).message}`);
+      setStatusInfo(`Stationen laden fehlgeschlagen: ${(error as Error).message}`);
     } finally {
       setIsBusy(false);
     }
@@ -186,98 +246,102 @@ export const Dashboard = () => {
     const id = normalizeNodeId(rawId);
     if (!id) return;
     upsertContact(id, false);
-    setStatusInfo(`Node ${id} hinzugefügt`);
   };
 
-  const handleApplyNetworkKey = async () => {
-    const key = networkKey.trim().toUpperCase();
-    if (!/^[0-9A-F]{32}$/.test(key)) {
-      setStatusInfo('Key muss 32 HEX-Zeichen haben');
+  /**
+   * Generate a new AES-128 key using browser Web Crypto (secure random).
+   * Stored in localStorage so it survives page refresh.
+   * Does NOT call the firmware — the key lives in the browser.
+   */
+  const handleGenerateMyKey = () => {
+    const newKey = generateKeyHex();
+    const currentNodeId = localStorage.getItem('nodeId') ?? myKeyNodeId;
+    setMyKey(newKey);
+    setMyKeyNodeId(currentNodeId);
+    localStorage.setItem(LS_MY_KEY, newKey);
+    setStatusInfo(`Neuer AES-128 Key generiert für Node 0x${currentNodeId}`);
+  };
+
+  /**
+   * Store a peer's AES-128 key in browser state + localStorage.
+   * Also optionally forwards it to firmware (/key set) so that the legacy
+   * firmware XOR cipher can still be used if needed.
+   */
+  const handleAddPeerKey = async (peerNodeId: string, key: string) => {
+    const normalId = normalizeNodeId(peerNodeId.replace(/^0x/i, ''));
+    const upperKey = key.toUpperCase().replace(/^0X/i, '');
+
+    if (!isValidKeyHex(upperKey)) {
+      setStatusInfo('Ungültiger Key — muss genau 32 HEX-Zeichen haben (AES-128)');
       return;
     }
 
-    setIsBusy(true);
+    // Store in browser for AES-128 decryption of incoming messages
+    setWebPeerKeys(prev => {
+      const next = new Map(prev);
+      next.set(normalId, upperKey);
+      savePeerKeys(next);
+      return next;
+    });
+
+    // Also forward to firmware for legacy /eto support
+    const hexId = `0x${normalId}`;
     try {
-      await commandService.sendCommand(`mesh key ${key}`);
-      setStatusInfo('Mesh-Key gesetzt');
-    } catch (error) {
-      setStatusInfo(`Key setzen fehlgeschlagen: ${(error as Error).message}`);
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  const handleGenerateNetworkKey = async () => {
-    const bytes = new Uint8Array(16);
-    crypto.getRandomValues(bytes);
-    const generated = Array.from(bytes)
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('')
-      .toUpperCase();
-
-    setNetworkKey(generated);
-
-    setIsBusy(true);
-    try {
-      await commandService.sendCommand(`mesh key ${generated}`);
-      setStatusInfo('Neuer Mesh-Key erzeugt und gesetzt');
-    } catch (error) {
-      setStatusInfo(`Key setzen fehlgeschlagen: ${(error as Error).message}`);
-    } finally {
-      setIsBusy(false);
-    }
-  };
-
-  const handleSendKeyToSelected = async () => {
-    if (!selectedContact) return;
-
-    const nodeNumber = toNodeNumber(selectedContact);
-    if (nodeNumber === null) {
-      setStatusInfo('Für Key-Transfer ist eine numerische Node-ID erforderlich');
-      return;
+      await commandService.sendCommand(`/key set ${hexId} ${upperKey}`);
+    } catch {
+      // Non-fatal — web-layer AES-128 still works without firmware key
     }
 
-    setIsBusy(true);
-    try {
-      await commandService.sendCommand(`mesh keysend ${nodeNumber}`);
-    } catch (error) {
-      setStatusInfo(`Key-Senden fehlgeschlagen: ${(error as Error).message}`);
-    } finally {
-      setIsBusy(false);
-    }
+    setPeerKeyStatus(`AES-128 Key für Node ${hexId} gespeichert`);
+    setStatusInfo(`AES-128 Key für Node ${hexId} gespeichert (Browser + Firmware)`);
   };
 
   const handleSendMessage = async (recipient: string, content: string) => {
-    const nodeNumber = toNodeNumber(recipient);
-    if (nodeNumber === null) {
-      setStatusInfo('Empfänger muss eine numerische Node-ID sein');
-      return;
-    }
-
     const optimisticId = crypto.randomUUID();
-    appendMessage(recipient, {
+    const normalRecipient = normalizeNodeId(recipient);
+    const hexId = normalRecipient;
+
+    // Encrypt with OWN key (myKey), not the recipient's key.
+    // The recipient decrypts with the sender's key they stored via QR-code exchange.
+    // This matches the firmware model: sender encrypts with personalKey,
+    // recipient decrypts using the stored key for that sender node.
+    appendMessage(normalRecipient, {
       id: optimisticId,
       content,
       sender: 'me',
-      receiver: recipient,
+      receiver: normalRecipient,
       timestamp: new Date(),
       status: 'pending',
       via: 'radio',
+      encrypted: Boolean(myKey),
     });
 
     try {
-      await commandService.sendCommand(`sendto ${nodeNumber} ${content}`);
+      let command: string;
+      if (myKey) {
+        // AES-128-GCM encrypt with own key; recipient needs our key stored to decrypt
+        const cipher = await encryptMessage(content, myKey);
+        command = cipher; // firmware relays opaque ciphertext
+      } else if (/^[0-9a-fA-F]+$/.test(hexId)) {
+        // Fallback: firmware-level /eto (AES-128-CTR) when no web-layer key exists
+        command = `/eto 0x${hexId} ${content}`;
+      } else {
+        command = content;
+      }
+
+      await commandService.sendCommand(command);
+
       setMessagesByContact(prev => ({
         ...prev,
-        [recipient]: (prev[recipient] ?? []).map(message =>
-          message.id === optimisticId ? { ...message, status: 'sent' } : message,
+        [normalRecipient]: (prev[normalRecipient] ?? []).map(msg =>
+          msg.id === optimisticId ? { ...msg, status: 'sent' } : msg,
         ),
       }));
     } catch {
       setMessagesByContact(prev => ({
         ...prev,
-        [recipient]: (prev[recipient] ?? []).map(message =>
-          message.id === optimisticId ? { ...message, status: 'failed' } : message,
+        [normalRecipient]: (prev[normalRecipient] ?? []).map(msg =>
+          msg.id === optimisticId ? { ...msg, status: 'failed' } : msg,
         ),
       }));
       setStatusInfo('Nachricht konnte nicht gesendet werden');
@@ -288,6 +352,15 @@ export const Dashboard = () => {
     () => (selectedContact ? messagesByContact[selectedContact] ?? [] : []),
     [selectedContact, messagesByContact],
   );
+
+  const selectedHasPeerKey = selectedContact
+    ? webPeerKeys.has(normalizeNodeId(selectedContact))
+    : false;
+
+  // Can send encrypted: we have our own key
+  // Can receive encrypted: we have the sender's key stored
+  const canSendEncrypted = Boolean(myKey);
+  const bothEncrypted = canSendEncrypted && selectedHasPeerKey;
 
   return (
     <div className="flex h-screen flex-col bg-gray-100">
@@ -302,8 +375,8 @@ export const Dashboard = () => {
             <div className="flex items-center space-x-4">
               {nodeId && (
                 <div className="text-sm text-gray-600">
-                  <span className="mr-2 inline-block h-2 w-2 rounded-full bg-green-500"></span>
-                  Node: <span className="font-mono text-xs">{nodeId}</span>
+                  <span className="mr-2 inline-block h-2 w-2 rounded-full bg-green-500" />
+                  Node: <span className="font-mono text-xs">0x{nodeId}</span>
                   <span className="ml-2 text-xs">({connectionType === 'usb' ? 'USB' : 'BT'})</span>
                 </div>
               )}
@@ -333,11 +406,11 @@ export const Dashboard = () => {
             onScanNodes={handleScanNodes}
             onRefreshPeers={handleRefreshPeers}
             onAddContact={handleAddContact}
-            networkKey={networkKey}
-            onNetworkKeyChange={setNetworkKey}
-            onApplyNetworkKey={handleApplyNetworkKey}
-            onGenerateNetworkKey={handleGenerateNetworkKey}
-            onSendKeyToSelected={handleSendKeyToSelected}
+            myKey={myKey}
+            myKeyNodeId={myKeyNodeId}
+            onGenerateMyKey={handleGenerateMyKey}
+            onAddPeerKey={handleAddPeerKey}
+            peerKeyStatus={peerKeyStatus}
             isBusy={isBusy}
           />
         </div>
@@ -346,10 +419,43 @@ export const Dashboard = () => {
           {selectedContact ? (
             <>
               <div className="border-b bg-gray-50 px-4 py-3">
-                <h3 className="font-medium text-gray-900">Node {selectedContact}</h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium text-gray-900">Node 0x{selectedContact}</h3>
+                  <span
+                    className={`rounded px-2 py-0.5 text-xs font-medium ${
+                      bothEncrypted
+                        ? 'bg-green-100 text-green-700'
+                        : canSendEncrypted || selectedHasPeerKey
+                          ? 'bg-yellow-100 text-yellow-700'
+                          : 'bg-gray-100 text-gray-500'
+                    }`}
+                  >
+                    {bothEncrypted
+                      ? 'AES-128 aktiv'
+                      : canSendEncrypted
+                        ? 'Nur Senden verschlüsselt'
+                        : selectedHasPeerKey
+                          ? 'Nur Empfang verschlüsselt'
+                          : 'Unverschlüsselt'}
+                  </span>
+                </div>
+                {!canSendEncrypted && (
+                  <p className="mt-0.5 text-[11px] text-amber-600">
+                    Kein eigener Key — ausgehende Nachrichten werden unverschlüsselt gesendet.
+                  </p>
+                )}
+                {canSendEncrypted && !selectedHasPeerKey && (
+                  <p className="mt-0.5 text-[11px] text-amber-600">
+                    Kein Key für diesen Kontakt gespeichert — eingehende Nachrichten können nicht entschlüsselt werden.
+                  </p>
+                )}
               </div>
               <MessageList messages={selectedMessages} />
-              <MessageInput recipient={selectedContact} onSendMessage={handleSendMessage} disabled={isBusy} />
+              <MessageInput
+                recipient={selectedContact}
+                onSendMessage={handleSendMessage}
+                disabled={isBusy}
+              />
             </>
           ) : (
             <div className="flex flex-1 items-center justify-center text-gray-500">

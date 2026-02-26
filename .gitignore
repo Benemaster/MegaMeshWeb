@@ -1,9 +1,12 @@
+# Ignore temporary Claude workspace files
+tmpclaude-*
 node_modules
 dist
 dist-ssr
 *.local
 .env
 .DS_Store
+cwd
 
 # Temporary files
 tmp/

@@ -1,4 +1,5 @@
 import type { BluetoothEvent, BluetoothDeviceInfo, BluetoothCharacteristics } from '../types/bluetooth';
+import { parseFirmwareLine } from './firmwareTextParser';
 
 type EventListener = (event: BluetoothEvent) => void;
 
@@ -16,7 +17,8 @@ class BluetoothServiceImpl {
   private rxBuffer = '';
 
   private readonly FIXED_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
-  private readonly DEVICE_NAME_PREFIX = 'ESP32-LoRaCfg';
+  // New firmware advertises as "MegaMesh"; also accept legacy "ESP32-LoRaCfg" boards
+  private readonly DEVICE_NAME_PREFIXES = ['MegaMesh', 'ESP32-LoRaCfg'];
 
   // ── Public API ─────────────────────────────────────────────────────────────
 
@@ -30,7 +32,7 @@ class BluetoothServiceImpl {
       this.cleanup();
 
       this.device = await navigator.bluetooth.requestDevice({
-        filters: [{ namePrefix: this.DEVICE_NAME_PREFIX }],
+        filters: this.DEVICE_NAME_PREFIXES.map(prefix => ({ namePrefix: prefix })),
         optionalServices: [this.FIXED_SERVICE_UUID],
       });
 
@@ -280,6 +282,29 @@ class BluetoothServiceImpl {
     if (this.rxBuffer.length > 4096) {
       console.warn('RX buffer overflow — clearing');
       this.rxBuffer = '';
+    }
+
+    // Also drain any complete plain-text lines the JSON parser did not consume
+    this.processTextLines();
+  }
+
+  /**
+   * Extracts newline-terminated non-JSON lines from rxBuffer and emits
+   * synthetic events parsed by firmwareTextParser.
+   */
+  private processTextLines(): void {
+    let nlIdx = this.rxBuffer.indexOf('\n');
+    while (nlIdx >= 0) {
+      const line = this.rxBuffer.slice(0, nlIdx).trim();
+      this.rxBuffer = this.rxBuffer.slice(nlIdx + 1);
+      if (line && !line.startsWith('{')) {
+        const evt = parseFirmwareLine(line);
+        if (evt) {
+          console.log('Parsed firmware text event:', evt);
+          this.emit(evt);
+        }
+      }
+      nlIdx = this.rxBuffer.indexOf('\n');
     }
   }
 

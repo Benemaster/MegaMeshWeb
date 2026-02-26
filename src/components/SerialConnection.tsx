@@ -12,16 +12,37 @@ export const SerialConnection = ({ onEventReceived, onMeshStarted }: SerialConne
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState('');
   const [isConnecting, setIsConnecting] = useState(false);
+  // 'waiting' = sent /id, awaiting response | 'legacy' = old firmware detected
+  const [firmwareMode, setFirmwareMode] = useState<'waiting' | 'new' | 'legacy'>('waiting');
 
   const isSerialSupported = 'serial' in navigator;
 
   useEffect(() => {
-    const unsubscribeEvents = serialService.addEventListener((event) => {
+    const unsubscribeEvents = serialService.addEventListener((event: BluetoothEvent) => {
       if (onEventReceived) onEventReceived(event);
+
+      // New firmware: responds to /id with a node_id event
+      if (event.evt === 'node_id' && typeof event.nodeId === 'number') {
+        setFirmwareMode('new');
+        if (onMeshStarted) onMeshStarted(event.nodeId);
+        return;
+      }
+
+      // mesh_ready fires on boot — send /id to retrieve node ID
+      if (event.evt === 'mesh_ready') {
+        serialService.sendCommand('/id').catch(() => {});
+        return;
+      }
+
+      // Old firmware: setup_info or first_boot → show DeviceConfigurator
+      if (event.evt === 'setup_info' || event.evt === 'first_boot') {
+        setFirmwareMode('legacy');
+      }
     });
 
     const unsubscribeDisconnect = serialService.addDisconnectListener(() => {
       setIsConnected(false);
+      setFirmwareMode('waiting');
       setError('USB-Verbindung getrennt.');
     });
 
@@ -29,7 +50,7 @@ export const SerialConnection = ({ onEventReceived, onMeshStarted }: SerialConne
       unsubscribeEvents();
       unsubscribeDisconnect();
     };
-  }, [onEventReceived]);
+  }, [onEventReceived, onMeshStarted]);
 
   const handleConnect = async () => {
     setError('');
@@ -42,7 +63,9 @@ export const SerialConnection = ({ onEventReceived, onMeshStarted }: SerialConne
     try {
       await serialService.connect();
       setIsConnected(true);
-      await serialService.sendCommand('info').catch(() => {});
+      setFirmwareMode('waiting');
+      // New firmware: ask for node ID immediately
+      await serialService.sendCommand('/id').catch(() => {});
     } catch (err) {
       setError(`USB-Verbindung fehlgeschlagen: ${(err as Error).message}`);
     } finally {
@@ -53,6 +76,7 @@ export const SerialConnection = ({ onEventReceived, onMeshStarted }: SerialConne
   const handleDisconnect = async () => {
     await serialService.disconnect().catch(() => {});
     setIsConnected(false);
+    setFirmwareMode('waiting');
   };
 
   return (
@@ -75,7 +99,7 @@ export const SerialConnection = ({ onEventReceived, onMeshStarted }: SerialConne
         {!isConnected ? (
           <div className="space-y-4">
             <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded text-sm">
-              <p><strong>Ziel:</strong> Setup über USB-Serial (115200 Baud)</p>
+              <p><strong>Ziel:</strong> MegaMesh USB-Serial (115200 Baud)</p>
               <p className="mt-1">Klicke auf <em>USB verbinden</em> und wähle den COM-Port deines ESP32.</p>
             </div>
 
@@ -101,6 +125,13 @@ export const SerialConnection = ({ onEventReceived, onMeshStarted }: SerialConne
               <p>Baudrate: 115200</p>
             </div>
 
+            {firmwareMode === 'waiting' && (
+              <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded border border-gray-200">
+                <span className="inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                Warte auf Node-ID vom Gerät…
+              </div>
+            )}
+
             <button
               onClick={handleDisconnect}
               className="w-full px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 text-sm"
@@ -111,8 +142,12 @@ export const SerialConnection = ({ onEventReceived, onMeshStarted }: SerialConne
         )}
       </div>
 
-      {isConnected && (
+      {/* Legacy firmware: show full DeviceConfigurator setup flow */}
+      {isConnected && firmwareMode === 'legacy' && (
         <div className="border-t pt-6">
+          <p className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded">
+            Ältere Firmware erkannt — erweitertes Setup wird angezeigt.
+          </p>
           <DeviceConfigurator onMeshStarted={onMeshStarted} transport="serial" />
         </div>
       )}

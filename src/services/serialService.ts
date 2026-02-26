@@ -1,4 +1,5 @@
 import type { BluetoothEvent } from '../types/bluetooth';
+import { parseFirmwareLine } from './firmwareTextParser';
 
 type EventListener = (event: BluetoothEvent) => void;
 
@@ -145,7 +146,13 @@ class SerialService {
           const parsed = JSON.parse(line) as BluetoothEvent;
           this.emit(parsed);
         } catch {
+          // JSON parse failed — try as plain-text firmware line
+          const evt = parseFirmwareLine(line);
+          if (evt) this.emit(evt);
         }
+      } else if (line) {
+        const evt = parseFirmwareLine(line);
+        if (evt) this.emit(evt);
       }
 
       newlineIndex = this.rxBuffer.indexOf('\n');
