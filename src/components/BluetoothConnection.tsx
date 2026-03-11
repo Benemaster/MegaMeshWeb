@@ -15,6 +15,8 @@ export const BluetoothConnection = ({ onEventReceived, onMeshStarted }: Bluetoot
   const [isConnecting, setIsConnecting] = useState(false);
   // 'waiting' = sent /id, awaiting response | 'legacy' = old firmware detected
   const [firmwareMode, setFirmwareMode] = useState<'waiting' | 'new' | 'legacy'>('waiting');
+  // BLE advertising timeout state (firmware stops advertising after 3 min)
+  const [bleAdvStopped, setBleAdvStopped] = useState(false);
 
   const isBluetoothSupported = 'bluetooth' in navigator;
 
@@ -39,6 +41,15 @@ export const BluetoothConnection = ({ onEventReceived, onMeshStarted }: Bluetoot
       // Old firmware: sends setup_info → show DeviceConfigurator
       if (event.evt === 'setup_info' || event.evt === 'first_boot') {
         setFirmwareMode('legacy');
+      }
+
+      // BLE advertising timed out — device no longer discoverable
+      if (event.evt === 'ble_adv_stopped') {
+        setBleAdvStopped(true);
+      }
+      // BLE advertising reactivated via BOOT button
+      if (event.evt === 'ble_adv_restarted') {
+        setBleAdvStopped(false);
       }
     });
 
@@ -73,6 +84,11 @@ export const BluetoothConnection = ({ onEventReceived, onMeshStarted }: Bluetoot
 
       if (/must be handling a user gesture/i.test(message)) {
         setError('Verbindung fehlgeschlagen: Bitte den Verbindungsbutton direkt anklicken (kein automatischer Aufruf).');
+      } else if (/User cancelled/i.test(message)) {
+        // User dismissed the browser picker — no need to show an error
+      } else if (/connection attempt failed|NetworkError/i.test(message) || /Connection Error/i.test(message)) {
+        setError('Gerät nicht gefunden / Verbindung fehlgeschlagen. BLE ist nur 3 Minuten nach dem Start sichtbar — BOOT-Taste am ESP32 drücken und erneut versuchen.');
+        setBleAdvStopped(true);
       } else {
         setError(`Verbindung fehlgeschlagen: ${name}${message}`);
       }
@@ -91,12 +107,12 @@ export const BluetoothConnection = ({ onEventReceived, onMeshStarted }: Bluetoot
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium text-gray-900 mb-4">
+        <h3 className="text-lg font-medium text-gray-100 mb-4">
           MegaMesh Bluetooth-Verbindung
         </h3>
 
         {error && (
-          <div className="mb-4 bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+          <div className="mb-4 bg-red-900/20 border border-red-700 text-red-400 px-4 py-3 rounded relative">
             <span className="block sm:inline">{error}</span>
             <button
               onClick={() => setError('')}
@@ -109,15 +125,19 @@ export const BluetoothConnection = ({ onEventReceived, onMeshStarted }: Bluetoot
 
         {!isConnected ? (
           <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded text-sm">
+            <div className="bg-blue-900/20 border border-blue-800 text-blue-400 px-4 py-3 rounded text-sm">
               <p><strong>Ziel:</strong> MegaMesh BLE-Geräte</p>
               <p className="mt-1">Klicke auf <em>Scannen &amp; verbinden</em>, um dein Gerät zu finden.</p>
+              <p className="mt-2 text-[11px] text-blue-300/70">
+                ⚠ BLE ist nur <strong>3 Minuten</strong> nach dem Start sichtbar.
+                Falls das Gerät nicht gefunden wird, <strong>BOOT-Taste</strong> am ESP32 drücken.
+              </p>
             </div>
 
             <button
               onClick={handleConnect}
               disabled={!isBluetoothSupported || isConnecting}
-              className="w-full flex justify-center items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              className="w-full flex justify-center items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
             >
               {isConnecting ? (
                 <>
@@ -130,12 +150,12 @@ export const BluetoothConnection = ({ onEventReceived, onMeshStarted }: Bluetoot
             </button>
 
             {!isBluetoothSupported && (
-              <p className="text-xs text-gray-500">Bitte Chrome oder Edge auf Desktop oder Android verwenden.</p>
+              <p className="text-xs text-gray-400">Bitte Chrome oder Edge auf Desktop oder Android verwenden.</p>
             )}
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="bg-green-50 border border-green-400 text-green-700 px-4 py-3 rounded text-sm">
+            <div className="bg-green-900/20 border border-green-700 text-green-400 px-4 py-3 rounded text-sm">
               <p className="font-medium">Verbunden</p>
               {deviceInfo && (
                 <>
@@ -146,9 +166,16 @@ export const BluetoothConnection = ({ onEventReceived, onMeshStarted }: Bluetoot
             </div>
 
             {firmwareMode === 'waiting' && (
-              <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded border border-gray-200">
+              <div className="flex items-center gap-2 text-sm text-gray-400 bg-gray-800 px-3 py-2 rounded border border-gray-700">
                 <span className="inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                 Warte auf Node-ID vom Gerät…
+              </div>
+            )}
+
+            {bleAdvStopped && (
+              <div className="bg-amber-900/20 border border-amber-700 text-amber-400 px-3 py-2 rounded text-xs">
+                ⚠ BLE-Sichtbarkeit abgelaufen (3 Min. Timeout).<br />
+                <strong>BOOT-Taste</strong> am ESP32 drücken, um Bluetooth wieder zu aktivieren.
               </div>
             )}
 
@@ -165,7 +192,7 @@ export const BluetoothConnection = ({ onEventReceived, onMeshStarted }: Bluetoot
       {/* Legacy firmware: show full DeviceConfigurator setup flow */}
       {isConnected && firmwareMode === 'legacy' && (
         <div className="border-t pt-6">
-          <p className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded">
+          <p className="mb-3 text-xs text-amber-400 bg-amber-900/20 border border-amber-800 px-3 py-2 rounded">
             Ältere Firmware erkannt — erweitertes Setup wird angezeigt.
           </p>
           <DeviceConfigurator onMeshStarted={onMeshStarted} />

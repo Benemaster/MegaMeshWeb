@@ -82,10 +82,10 @@ export const SerialConnection = ({ onEventReceived, onMeshStarted }: SerialConne
   return (
     <div className="space-y-6">
       <div>
-        <h3 className="text-lg font-medium text-gray-900 mb-4">ESP32 USB-Serial Verbindung</h3>
+        <h3 className="text-lg font-medium text-gray-100 mb-4">ESP32 USB-Serial Verbindung</h3>
 
         {error && (
-          <div className="mb-4 bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded relative">
+          <div className="mb-4 bg-red-900/20 border border-red-700 text-red-400 px-4 py-3 rounded relative">
             <span className="block sm:inline">{error}</span>
             <button
               onClick={() => setError('')}
@@ -98,7 +98,7 @@ export const SerialConnection = ({ onEventReceived, onMeshStarted }: SerialConne
 
         {!isConnected ? (
           <div className="space-y-4">
-            <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded text-sm">
+            <div className="bg-blue-900/20 border border-blue-800 text-blue-400 px-4 py-3 rounded text-sm">
               <p><strong>Ziel:</strong> MegaMesh USB-Serial (115200 Baud)</p>
               <p className="mt-1">Klicke auf <em>USB verbinden</em> und wähle den COM-Port deines ESP32.</p>
             </div>
@@ -106,7 +106,7 @@ export const SerialConnection = ({ onEventReceived, onMeshStarted }: SerialConne
             <button
               onClick={handleConnect}
               disabled={!isSerialSupported || isConnecting}
-              className="w-full flex justify-center items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
+              className="w-full flex justify-center items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-600 disabled:cursor-not-allowed"
             >
               {isConnecting ? (
                 <>
@@ -120,13 +120,13 @@ export const SerialConnection = ({ onEventReceived, onMeshStarted }: SerialConne
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="bg-green-50 border border-green-400 text-green-700 px-4 py-3 rounded text-sm">
+            <div className="bg-green-900/20 border border-green-700 text-green-400 px-4 py-3 rounded text-sm">
               <p className="font-medium">Verbunden über USB</p>
               <p>Baudrate: 115200</p>
             </div>
 
             {firmwareMode === 'waiting' && (
-              <div className="flex items-center gap-2 text-sm text-gray-600 bg-gray-50 px-3 py-2 rounded border border-gray-200">
+              <div className="flex items-center gap-2 text-sm text-gray-400 bg-gray-800 px-3 py-2 rounded border border-gray-700">
                 <span className="inline-block w-3 h-3 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
                 Warte auf Node-ID vom Gerät…
               </div>
@@ -145,7 +145,7 @@ export const SerialConnection = ({ onEventReceived, onMeshStarted }: SerialConne
       {/* Legacy firmware: show full DeviceConfigurator setup flow */}
       {isConnected && firmwareMode === 'legacy' && (
         <div className="border-t pt-6">
-          <p className="mb-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 px-3 py-2 rounded">
+          <p className="mb-3 text-xs text-amber-400 bg-amber-900/20 border border-amber-800 px-3 py-2 rounded">
             Ältere Firmware erkannt — erweitertes Setup wird angezeigt.
           </p>
           <DeviceConfigurator onMeshStarted={onMeshStarted} transport="serial" />

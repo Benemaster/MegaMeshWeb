@@ -474,15 +474,15 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
     const isReadonly = field.k === 'weather_sensors';
 
     return (
-      <div key={field.k} className="rounded-lg border border-gray-200 p-4">
-        <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+      <div key={field.k} className="rounded-lg border border-gray-700 p-4">
+        <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-gray-400">
           <span>{fieldLabel(field)}</span>
           {field.unit && <span className="text-gray-400">({field.unit})</span>}
           {state.acking && <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />}
         </div>
 
         {isReadonly ? (
-          <div className="rounded border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-700">{state.value}</div>
+          <div className="rounded border border-gray-700 bg-gray-800 px-3 py-2 text-sm text-gray-300">{state.value}</div>
         ) : options.length > 0 ? (
           options.length <= 6 ? (
             <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -495,7 +495,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
                   className={`rounded-md border px-3 py-2 text-sm transition-colors ${
                     state.value === option
                       ? 'border-blue-600 bg-blue-600 text-white'
-                      : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                      : 'border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-700'
                   } ${state.acking ? 'cursor-not-allowed opacity-60' : ''}`}
                 >
                   {normalizeLabel(field, option)}
@@ -505,7 +505,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
           ) : (
             <select
               className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                state.error ? 'border-red-400' : 'border-gray-300'
+                state.error ? 'border-red-700' : 'border-gray-600'
               }`}
               value={state.value}
               disabled={state.acking}
@@ -522,7 +522,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
           <input
             type={field.type === 'hex' ? 'text' : 'number'}
             className={`w-full rounded-md border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-              state.error ? 'border-red-400' : 'border-gray-300'
+              state.error ? 'border-red-700' : 'border-gray-600'
             }`}
             value={state.value}
             disabled={state.acking}
@@ -540,7 +540,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
           />
         )}
 
-        {state.error && <p className="mt-2 text-xs text-red-600">{state.error}</p>}
+        {state.error && <p className="mt-2 text-xs text-red-400">{state.error}</p>}
       </div>
     );
   }
@@ -553,7 +553,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
   if (phase === 'done') {
     return (
       <div className="space-y-4">
-        <div className="rounded-lg border border-green-400 bg-green-50 p-6 text-center text-green-800">
+        <div className="rounded-lg border border-green-700 bg-green-900/20 p-6 text-center text-green-300">
           <div className="mb-2 text-3xl">✓</div>
           <p className="text-lg font-semibold">Setup abgeschlossen</p>
           {nodeId !== null && <p className="mt-1 font-mono text-sm">Node-ID: {nodeId}</p>}
@@ -561,7 +561,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
         </div>
         <button
           onClick={handleReboot}
-          className="w-full rounded-md bg-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-300"
+          className="w-full rounded-md bg-gray-700 px-4 py-2 text-sm text-gray-300 hover:bg-gray-600"
         >
           Gerät neu starten
         </button>
@@ -573,7 +573,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
   if (phase === 'error') {
     return (
       <div className="space-y-4">
-        <div className="rounded-lg border border-red-400 bg-red-50 p-4 text-red-800">
+        <div className="rounded-lg border border-red-700 bg-red-900/20 p-4 text-red-300">
           <p className="font-semibold">Fehler</p>
           <p className="mt-1 text-sm">{radioError ?? 'Unbekannter Fehler'}</p>
         </div>
@@ -594,7 +594,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
   if (!setupInfo || phase === 'idle') {
     return (
       <div className="space-y-4">
-        <div className="flex items-center space-x-3 text-gray-500">
+        <div className="flex items-center space-x-3 text-gray-400">
           <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-blue-500 border-t-transparent" />
           <span className="text-sm">Warte auf Setup-Daten vom Gerät …</span>
         </div>
@@ -615,12 +615,12 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
   if (isFirstSetup && !showAdvancedFirstSetup) {
     return (
       <div className="space-y-6">
-        <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-          <h3 className="text-base font-semibold text-blue-900">Vereinfachtes Erstsetup</h3>
-          <p className="mt-1 text-sm text-blue-800">
+        <div className="rounded-lg border border-blue-800 bg-blue-900/20 p-4">
+          <h3 className="text-base font-semibold text-blue-300">Vereinfachtes Erstsetup</h3>
+          <p className="mt-1 text-sm text-blue-300">
             Wähle dein Gerät. Die Standardwerte werden automatisch gesetzt, gespeichert und der Funk wird initialisiert.
           </p>
-          <p className="mt-1 text-xs text-blue-700">
+          <p className="mt-1 text-xs text-blue-400">
             Heltec V3 Pinout: NSS=GPIO8, SCK=GPIO9, MOSI=GPIO10, MISO=GPIO11, RST=GPIO12, BUSY=GPIO13, DIO1=GPIO14.
           </p>
         </div>
@@ -633,11 +633,11 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
             className={`rounded-md border px-4 py-3 text-left ${
               quickDevice === 'heltec_v3'
                 ? 'border-blue-600 bg-blue-600 text-white'
-                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                : 'border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-700'
             }`}
           >
             <p className="font-medium">Heltec V3</p>
-            <p className={`text-xs ${quickDevice === 'heltec_v3' ? 'text-blue-100' : 'text-gray-500'}`}>
+            <p className={`text-xs ${quickDevice === 'heltec_v3' ? 'text-blue-300' : 'text-gray-400'}`}>
               Für Heltec WiFi LoRa 32 V3
             </p>
           </button>
@@ -649,25 +649,25 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
             className={`rounded-md border px-4 py-3 text-left ${
               quickDevice === 'megamesh'
                 ? 'border-blue-600 bg-blue-600 text-white'
-                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                : 'border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-700'
             }`}
           >
             <p className="font-medium">MegaMesh-Gerät</p>
-            <p className={`text-xs ${quickDevice === 'megamesh' ? 'text-blue-100' : 'text-gray-500'}`}>
+            <p className={`text-xs ${quickDevice === 'megamesh' ? 'text-blue-300' : 'text-gray-400'}`}>
               Für dein eigenes MegaMesh-Hardwareprofil
             </p>
           </button>
         </div>
 
         {phase === 'initing' && (
-          <div className="flex items-center space-x-2 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+          <div className="flex items-center space-x-2 rounded border border-blue-800 bg-blue-900/20 p-3 text-sm text-blue-400">
             <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
             <span>Funkmodul wird initialisiert …</span>
           </div>
         )}
 
         {quickError && (
-          <div className="rounded border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700">
+          <div className="rounded border border-red-700 bg-red-900/20 px-3 py-2 text-sm text-red-400">
             {quickError}
           </div>
         )}
@@ -685,7 +685,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
           type="button"
           disabled={quickBusy || isBusy}
           onClick={() => setShowAdvancedFirstSetup(true)}
-          className="w-full rounded-md bg-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+          className="w-full rounded-md bg-gray-700 px-4 py-2 text-sm text-gray-300 hover:bg-gray-600 disabled:opacity-50"
         >
           Erweiterte Einstellungen anzeigen
         </button>
@@ -697,9 +697,9 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-blue-200 bg-blue-50 p-4">
-        <h3 className="text-base font-semibold text-blue-900">Schnellstart (empfohlen)</h3>
-        <p className="mt-1 text-sm text-blue-800">Wähle ein Geräteprofil und starte Speichern + LoRa-Init + Mesh mit einem Klick.</p>
+      <div className="rounded-lg border border-blue-800 bg-blue-900/20 p-4">
+        <h3 className="text-base font-semibold text-blue-300">Schnellstart (empfohlen)</h3>
+        <p className="mt-1 text-sm text-blue-300">Wähle ein Geräteprofil und starte Speichern + LoRa-Init + Mesh mit einem Klick.</p>
 
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <button
@@ -709,11 +709,11 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
             className={`rounded-md border px-4 py-3 text-left ${
               quickDevice === 'heltec_v3'
                 ? 'border-blue-600 bg-blue-600 text-white'
-                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                : 'border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-700'
             }`}
           >
             <p className="font-medium">Heltec V3</p>
-            <p className={`text-xs ${quickDevice === 'heltec_v3' ? 'text-blue-100' : 'text-gray-500'}`}>
+            <p className={`text-xs ${quickDevice === 'heltec_v3' ? 'text-blue-300' : 'text-gray-400'}`}>
               Standard-Pinout Heltec
             </p>
           </button>
@@ -725,11 +725,11 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
             className={`rounded-md border px-4 py-3 text-left ${
               quickDevice === 'megamesh'
                 ? 'border-blue-600 bg-blue-600 text-white'
-                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                : 'border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-700'
             }`}
           >
             <p className="font-medium">MegaMesh-Gerät</p>
-            <p className={`text-xs ${quickDevice === 'megamesh' ? 'text-blue-100' : 'text-gray-500'}`}>
+            <p className={`text-xs ${quickDevice === 'megamesh' ? 'text-blue-300' : 'text-gray-400'}`}>
               Eigenes Hardwareprofil
             </p>
           </button>
@@ -744,27 +744,27 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
           {quickBusy ? 'Auto-Start läuft …' : 'Auto-Start: Speichern + LoRa + Mesh'}
         </button>
 
-        {quickError && <p className="mt-2 text-sm text-red-700">{quickError}</p>}
+        {quickError && <p className="mt-2 text-sm text-red-400">{quickError}</p>}
       </div>
 
       <div className="flex flex-wrap gap-3 text-xs font-mono">
-        <span className={`rounded px-2 py-1 ${!cfgStatus ? 'bg-gray-100 text-gray-600' : cfgStatus.saved ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
+        <span className={`rounded px-2 py-1 ${!cfgStatus ? 'bg-gray-800 text-gray-400' : cfgStatus.saved ? 'bg-green-900/30 text-green-300' : 'bg-yellow-900/30 text-yellow-400'}`}>
           gespeichert: {savedLabel}
         </span>
-        <span className={`rounded px-2 py-1 ${!cfgStatus ? 'bg-gray-100 text-gray-600' : cfgStatus.radio_ok ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'}`}>
+        <span className={`rounded px-2 py-1 ${!cfgStatus ? 'bg-gray-800 text-gray-400' : cfgStatus.radio_ok ? 'bg-green-900/30 text-green-300' : 'bg-gray-800 text-gray-400'}`}>
           funk: {radioLabel}
         </span>
-        <span className="rounded bg-gray-100 px-2 py-1 text-gray-600">
+        <span className="rounded bg-gray-800 px-2 py-1 text-gray-400">
           mesh: {meshRunning ? 'läuft' : 'unbekannt/gestoppt'}
         </span>
       </div>
 
-      <div className="flex items-center justify-between rounded border border-gray-200 bg-gray-50 px-3 py-2">
-        <p className="text-sm text-gray-700">Ansicht</p>
+      <div className="flex items-center justify-between rounded border border-gray-700 bg-gray-800 px-3 py-2">
+        <p className="text-sm text-gray-300">Ansicht</p>
         <button
           type="button"
           onClick={() => setShowAdvanced(v => !v)}
-          className="rounded-md bg-white px-3 py-1 text-xs text-gray-700 border border-gray-300 hover:bg-gray-100"
+          className="rounded-md bg-gray-900 px-3 py-1 text-xs text-gray-300 border border-gray-600 hover:bg-gray-700"
         >
           {showAdvanced ? 'Einfach' : 'Erweitert'}
         </button>
@@ -779,7 +779,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
             className={`rounded-md border px-3 py-2 text-sm ${
               idx === activeStep
                 ? 'border-blue-600 bg-blue-600 text-white'
-                : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+                : 'border-gray-600 bg-gray-900 text-gray-300 hover:bg-gray-700'
             }`}
           >
             {step.title}
@@ -787,26 +787,26 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
         ))}
       </div>
 
-      <div className="rounded-lg border border-gray-200 p-4">
-        <h3 className="text-sm font-semibold text-gray-900">{currentStep.title}</h3>
-        <p className="mt-1 text-sm text-gray-600">{currentStep.description}</p>
+      <div className="rounded-lg border border-gray-700 p-4">
+        <h3 className="text-sm font-semibold text-gray-100">{currentStep.title}</h3>
+        <p className="mt-1 text-sm text-gray-400">{currentStep.description}</p>
       </div>
 
       {initWarning && (
-        <div className="rounded border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+        <div className="rounded border border-amber-700 bg-amber-900/20 px-3 py-2 text-sm text-amber-400">
           {initWarning}
         </div>
       )}
 
       {phase === 'saving' && (
-        <div className="flex items-center space-x-2 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+        <div className="flex items-center space-x-2 rounded border border-blue-800 bg-blue-900/20 p-3 text-sm text-blue-400">
           <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
           <span>Konfiguration wird gespeichert …</span>
         </div>
       )}
 
       {phase === 'initing' && (
-        <div className="flex items-center space-x-2 rounded border border-blue-200 bg-blue-50 p-3 text-sm text-blue-700">
+        <div className="flex items-center space-x-2 rounded border border-blue-800 bg-blue-900/20 p-3 text-sm text-blue-400">
           <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
           <span>Funkmodul wird initialisiert …</span>
         </div>
@@ -820,7 +820,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
 
           {showAdvanced && activeStep === 2 && extraFields.length > 0 && (
             <div>
-              <h4 className="mb-2 text-sm font-semibold text-gray-700">Weitere Werte</h4>
+              <h4 className="mb-2 text-sm font-semibold text-gray-300">Weitere Werte</h4>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">{extraFields.map(field => renderField(field))}</div>
             </div>
           )}
@@ -830,7 +830,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
               type="button"
               disabled={activeStep === 0}
               onClick={() => setActiveStep(v => Math.max(0, v - 1))}
-              className="flex-1 rounded-md bg-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex-1 rounded-md bg-gray-700 px-4 py-2 text-sm text-gray-300 hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Zurück
             </button>
@@ -857,7 +857,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
               disabled={isBusy || !cfgStatus?.saved}
               onClick={handleInit}
               title={!cfgStatus?.saved ? 'Bitte zuerst speichern' : ''}
-              className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               2) Funk initialisieren
             </button>
@@ -875,7 +875,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
             <button
               type="button"
               onClick={() => setActiveStep(STEPS.length - 2)}
-              className="flex-1 rounded-md bg-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-300"
+              className="flex-1 rounded-md bg-gray-700 px-4 py-2 text-sm text-gray-300 hover:bg-gray-600"
             >
               Zurück zu Schritt 3
             </button>
@@ -883,7 +883,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
               type="button"
               disabled={isBusy}
               onClick={handleReboot}
-              className="flex-1 rounded-md bg-gray-200 px-4 py-2 text-sm text-gray-700 hover:bg-gray-300 disabled:opacity-50"
+              className="flex-1 rounded-md bg-gray-700 px-4 py-2 text-sm text-gray-300 hover:bg-gray-600 disabled:opacity-50"
             >
               Gerät neu starten
             </button>
@@ -896,7 +896,7 @@ export const DeviceConfigurator = ({ onMeshStarted, transport = 'bluetooth' }: P
                     await commandService.sendCommand('bt off').catch(() => {});
                   }
                 }}
-                className="flex-1 rounded-md bg-orange-100 px-4 py-2 text-sm text-orange-700 hover:bg-orange-200 disabled:opacity-50"
+                className="flex-1 rounded-md bg-orange-900/20 px-4 py-2 text-sm text-orange-400 hover:bg-orange-800/20 disabled:opacity-50"
               >
                 Bluetooth aus
               </button>
@@ -924,7 +924,7 @@ function EventLog({ log, logEndRef }: EventLogProps) {
     <div className="border-t pt-4">
       <button
         type="button"
-        className="mb-2 text-xs text-gray-500 underline"
+        className="mb-2 text-xs text-gray-400 underline"
         onClick={() => setOpen(v => !v)}
       >
         {open ? 'Event-Log ausblenden' : 'Event-Log anzeigen'} ({log.length})

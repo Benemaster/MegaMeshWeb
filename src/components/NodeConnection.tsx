@@ -12,7 +12,7 @@ export const NodeConnection = () => {
     try {
       if (connectionType === 'usb') {
         if (!('serial' in navigator)) {
-          setError('Web Serial API wird von diesem Browser nicht unterstützt.');
+          setError('Web Serial API wird von diesem Browser nicht unterstÃ¼tzt.');
           return;
         }
 
@@ -23,7 +23,7 @@ export const NodeConnection = () => {
         setNodeId('NODE-' + Math.random().toString(36).substr(2, 9).toUpperCase());
       } else {
         if (!('bluetooth' in navigator)) {
-          setError('Web Bluetooth API wird von diesem Browser nicht unterstützt.');
+          setError('Web Bluetooth API wird von diesem Browser nicht unterstÃ¼tzt.');
           return;
         }
 
@@ -114,11 +114,11 @@ export const NodeConnection = () => {
 
       <div className="border-t pt-6">
         <h4 className="text-sm font-medium text-gray-900 mb-2">
-          Browser-Kompatibilität
+          Browser-Kompatibilitï¿½t
         </h4>
         <div className="text-sm text-gray-600 space-y-1">
-          <p>USB Serial: {('serial' in navigator) ? '? Unterstützt' : '? Nicht unterstützt'}</p>
-          <p>Bluetooth: {('bluetooth' in navigator) ? '? Unterstützt' : '? Nicht unterstützt'}</p>
+          <p>USB Serial: {('serial' in navigator) ? '? Unterstï¿½tzt' : '? Nicht unterstï¿½tzt'}</p>
+          <p>Bluetooth: {('bluetooth' in navigator) ? '? Unterstï¿½tzt' : '? Nicht unterstï¿½tzt'}</p>
         </div>
       </div>
     </div>

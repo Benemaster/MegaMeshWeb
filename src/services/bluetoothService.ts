@@ -16,6 +16,11 @@ class BluetoothServiceImpl {
   // BLE packet reassembly buffer (long JSON may arrive split across MTU chunks)
   private rxBuffer = '';
 
+  // Write queue — serialise BLE writes so firmware has time to process each command
+  private writeQueue: Array<{ data: Uint8Array; resolve: () => void; reject: (e: Error) => void }> = [];
+  private writeInProgress = false;
+  private static readonly WRITE_DELAY_MS = 30; // gap between writes
+
   private readonly FIXED_SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
   // New firmware advertises as "MegaMesh"; also accept legacy "ESP32-LoRaCfg" boards
   private readonly DEVICE_NAME_PREFIXES = ['MegaMesh', 'ESP32-LoRaCfg'];
@@ -66,13 +71,34 @@ class BluetoothServiceImpl {
     if (!this.characteristics?.rx) {
       throw new Error('Not connected to device');
     }
+    const data = new TextEncoder().encode(cmd + '\n');
+    return new Promise<void>((resolve, reject) => {
+      this.writeQueue.push({ data, resolve, reject });
+      this.drainWriteQueue();
+    });
+  }
+
+  private async drainWriteQueue(): Promise<void> {
+    if (this.writeInProgress) return;
+    this.writeInProgress = true;
     try {
-      const data = new TextEncoder().encode(cmd + '\n');
-      await this.characteristics.rx.writeValue(data);
-      console.log('Sent command:', cmd);
-    } catch (error) {
-      console.error('Failed to send command:', error);
-      throw error;
+      while (this.writeQueue.length > 0) {
+        const item = this.writeQueue.shift()!;
+        try {
+          await this.characteristics!.rx!.writeValue(item.data);
+          console.log('Sent command:', new TextDecoder().decode(item.data).trim());
+          item.resolve();
+        } catch (error) {
+          console.error('Failed to send command:', error);
+          item.reject(error instanceof Error ? error : new Error(String(error)));
+        }
+        // Small delay so firmware loop() can consume the command
+        if (this.writeQueue.length > 0) {
+          await new Promise(r => setTimeout(r, BluetoothServiceImpl.WRITE_DELAY_MS));
+        }
+      }
+    } finally {
+      this.writeInProgress = false;
     }
   }
 
@@ -265,8 +291,17 @@ class BluetoothServiceImpl {
           const candidate = this.rxBuffer.slice(start, i + 1);
           try {
             const obj: BluetoothEvent = JSON.parse(candidate);
-            console.log('Received event:', obj);
-            this.emit(obj);
+            // /settings JSON starts with {"nodeId": — route through firmware text parser
+            if ('nodeId' in obj && 'maxHops' in obj && !('evt' in obj)) {
+              const settingsEvt = parseFirmwareLine(candidate);
+              if (settingsEvt) {
+                console.log('Parsed settings JSON:', settingsEvt);
+                this.emit(settingsEvt);
+              }
+            } else {
+              console.log('Received event:', obj);
+              this.emit(obj);
+            }
           } catch {
             console.warn('Failed to parse extracted JSON:', candidate);
           }
@@ -324,6 +359,13 @@ class BluetoothServiceImpl {
     this.server = null;
     this.characteristics = null;
     this.rxBuffer = '';
+
+    // Reject any pending writes and clear queue
+    for (const item of this.writeQueue) {
+      item.reject(new Error('Disconnected'));
+    }
+    this.writeQueue = [];
+    this.writeInProgress = false;
   }
 }
 

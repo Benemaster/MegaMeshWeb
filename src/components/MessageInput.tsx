@@ -21,7 +21,7 @@ export const MessageInput = ({ recipient, onSendMessage, disabled = false }: Mes
   };
 
   return (
-    <div className="border-t border-gray-200 p-4">
+    <div className="border-t border-gray-700 p-4">
       <form onSubmit={handleSubmit} className="flex space-x-2">
         <input
           type="text"
@@ -29,7 +29,7 @@ export const MessageInput = ({ recipient, onSendMessage, disabled = false }: Mes
           value={message}
           disabled={disabled || sending}
           onChange={(e) => setMessage(e.target.value)}
-          className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+          className="flex-1 px-3 py-2 border border-gray-600 rounded-md focus:outline-none focus:ring-primary-500 focus:border-primary-500"
         />
         <button
           type="submit"

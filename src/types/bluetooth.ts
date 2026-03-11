@@ -137,6 +137,60 @@ export interface WeatherRxEvent {
   data: string;
 }
 
+export interface SettingsEvent {
+  evt: 'settings';
+  nodeId: string;
+  maxHops: number;
+  weatherMode: boolean;
+  personalKeyValid: boolean;
+  personalKey?: string;
+  loraFreq: number;
+  loraBW: number;
+  loraSF: number;
+  loraCR: number;
+  loraPower: number;
+  bleConnected: boolean;
+  peerKeys: number;
+  stations: number;
+  reliableSend: boolean;
+  outboundBuffered: number;
+  sleepMode: boolean;
+  batteryV: number;
+  batteryPct: number;
+  settingsDirty: boolean;
+}
+
+export interface BatteryEvent {
+  evt: 'battery';
+  voltage: number;
+  percent: number;
+}
+
+export interface TracerouteEvent {
+  evt: 'traceroute';
+  target: string;
+  route: string;
+}
+
+export interface AckEvent {
+  evt: 'ack_received';
+  origin: string;
+  msgId: number;
+}
+
+export interface MykeySetEvent {
+  evt: 'mykey_set';
+  key: string;
+}
+
+export interface BleAdvStoppedEvent {
+  evt: 'ble_adv_stopped';
+}
+
+export interface BleAdvRestartedEvent {
+  evt: 'ble_adv_restarted';
+}
+
 export type FirmwareEvent =
   | BluetoothEvent
   | SetupInfoEvent
@@ -153,4 +207,11 @@ export type FirmwareEvent =
   | MykeyGeneratedEvent
   | KeySavedEvent
   | KeyDeletedEvent
-  | WeatherRxEvent;
+  | WeatherRxEvent
+  | SettingsEvent
+  | BatteryEvent
+  | TracerouteEvent
+  | AckEvent
+  | MykeySetEvent
+  | BleAdvStoppedEvent
+  | BleAdvRestartedEvent;

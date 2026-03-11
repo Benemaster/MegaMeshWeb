@@ -37,7 +37,7 @@ export const Connect = () => {
   };
 
   const handleMeshStarted = (meshNodeId: number) => {
-    const id = String(meshNodeId);
+    const id = meshNodeId.toString(16);
     setNodeId(id);
     setIsConnected(true);
     setShowBluetoothDetail(false);
@@ -60,13 +60,13 @@ export const Connect = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white shadow">
+    <div className="min-h-screen bg-gray-800">
+      <header className="bg-gray-900 shadow">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex justify-between items-center">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">MegaMesh</h1>
-              <p className="text-sm text-gray-600">Willkommen, {user?.username}</p>
+              <h1 className="text-2xl font-bold text-gray-100">MegaMesh</h1>
+              <p className="text-sm text-gray-400">Willkommen, {user?.username}</p>
             </div>
             <button
               onClick={logout}
@@ -79,13 +79,13 @@ export const Connect = () => {
       </header>
 
       <div className="max-w-2xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="bg-white rounded-lg shadow p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">
+        <div className="bg-gray-900 rounded-lg shadow p-8">
+          <h2 className="text-2xl font-bold text-gray-100 mb-6">
             Node verbinden
           </h2>
           
           {error && (
-            <div className="mb-6 bg-red-50 border border-red-400 text-red-700 px-4 py-3 rounded">
+            <div className="mb-6 bg-red-900/20 border border-red-700 text-red-400 px-4 py-3 rounded">
               {error}
             </div>
           )}
@@ -93,7 +93,7 @@ export const Connect = () => {
           {!isConnected && !showBluetoothDetail && !showSerialDetail ? (
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-3">
+                <label className="block text-sm font-medium text-gray-300 mb-3">
                   Verbindungstyp wählen
                 </label>
                 <div className="flex space-x-4">
@@ -128,10 +128,10 @@ export const Connect = () => {
               </button>
 
               <div className="border-t pt-6">
-                <h4 className="text-sm font-medium text-gray-900 mb-3">
+                <h4 className="text-sm font-medium text-gray-100 mb-3">
                   Browser-Kompatibilität
                 </h4>
-                <div className="text-sm text-gray-600 space-y-2">
+                <div className="text-sm text-gray-400 space-y-2">
                   <p>USB Serial: {('serial' in navigator) ? '✓ Unterstützt' : '✗ Nicht unterstützt'}</p>
                   <p>Bluetooth: {('bluetooth' in navigator) ? '✓ Unterstützt' : '✗ Nicht unterstützt'}</p>
                 </div>
@@ -143,7 +143,7 @@ export const Connect = () => {
               
               <button
                 onClick={() => setShowBluetoothDetail(false)}
-                className="w-full px-6 py-3 bg-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                className="w-full px-6 py-3 bg-gray-700 text-gray-300 font-medium rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
               >
                 Zurück zur Auswahl
               </button>
@@ -154,16 +154,16 @@ export const Connect = () => {
 
               <button
                 onClick={() => setShowSerialDetail(false)}
-                className="w-full px-6 py-3 bg-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                className="w-full px-6 py-3 bg-gray-700 text-gray-300 font-medium rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
               >
                 Zurück zur Auswahl
               </button>
             </div>
           ) : (
             <div className="space-y-6">
-              <div className="bg-green-50 border border-green-400 text-green-700 px-4 py-4 rounded">
+              <div className="bg-green-900/20 border border-green-700 text-green-400 px-4 py-4 rounded">
                 <p className="font-medium text-lg mb-2">✓ Verbunden</p>
-                <p className="text-sm">Node-ID: <span className="font-mono">{nodeId}</span></p>
+                <p className="text-sm">Node-ID: <span className="font-mono">0x{nodeId}</span></p>
                 <p className="text-sm">Typ: {connectionType === 'usb' ? 'USB-Seriell' : 'Bluetooth'}</p>
               </div>
 
@@ -176,7 +176,7 @@ export const Connect = () => {
 
               <button
                 onClick={handleDisconnect}
-                className="w-full px-6 py-3 bg-gray-200 text-gray-700 font-medium rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                className="w-full px-6 py-3 bg-gray-700 text-gray-300 font-medium rounded-md hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
               >
                 Verbindung trennen
               </button>

@@ -144,7 +144,13 @@ class SerialService {
       if (line.startsWith('{') && line.endsWith('}')) {
         try {
           const parsed = JSON.parse(line) as BluetoothEvent;
-          this.emit(parsed);
+          // /settings JSON starts with {"nodeId": — route through firmware text parser
+          if ('nodeId' in parsed && 'maxHops' in parsed && !('evt' in parsed)) {
+            const settingsEvt = parseFirmwareLine(line);
+            if (settingsEvt) this.emit(settingsEvt);
+          } else {
+            this.emit(parsed);
+          }
         } catch {
           // JSON parse failed — try as plain-text firmware line
           const evt = parseFirmwareLine(line);
