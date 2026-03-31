@@ -6,15 +6,123 @@
   *, ::before, ::after {
     border-color: theme('colors.gray.700');
   }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #0a0f1e;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #232d52;
+    border-radius: 3px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: #2997ff44;
+  }
 }
 
 body {
   margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  background-color: #111827;
-  color: #f3f4f6;
+  background-color: #0a0f1e;
+  color: #e2e8f0;
+}
+
+@layer components {
+  /* Glass card effect */
+  .glass-card {
+    @apply rounded-xl border border-white/[0.06] bg-white/[0.03] backdrop-blur-lg;
+  }
+
+  .glass-card-hover {
+    @apply glass-card transition-all duration-300 hover:border-primary-500/20 hover:bg-white/[0.05] hover:shadow-glow-sm;
+  }
+
+  /* Futuristic input */
+  .input-cyber {
+    @apply w-full rounded-lg border border-white/10 bg-surface-100/80 px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500
+           transition-all duration-200
+           focus:border-primary-500/50 focus:bg-surface-50 focus:outline-none focus:ring-1 focus:ring-primary-500/30 focus:shadow-glow-sm;
+  }
+
+  /* Gradient button */
+  .btn-primary {
+    @apply relative overflow-hidden rounded-lg bg-gradient-to-r from-primary-600 to-cyber-600
+           px-5 py-2.5 text-sm font-semibold text-white shadow-lg
+           transition-all duration-300
+           hover:from-primary-500 hover:to-cyber-500 hover:shadow-glow-blue
+           focus:outline-none focus:ring-2 focus:ring-primary-500/50
+           disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none;
+  }
+
+  .btn-secondary {
+    @apply rounded-lg border border-white/10 bg-surface-200/80 px-4 py-2.5 text-sm font-medium text-gray-300
+           transition-all duration-200
+           hover:border-white/20 hover:bg-surface-300 hover:text-white
+           focus:outline-none focus:ring-1 focus:ring-primary-500/30;
+  }
+
+  .btn-danger {
+    @apply rounded-lg bg-red-600/80 px-4 py-2.5 text-sm font-medium text-white
+           transition-all duration-200
+           hover:bg-red-500 hover:shadow-[0_0_15px_rgba(239,68,68,0.3)]
+           focus:outline-none focus:ring-2 focus:ring-red-500/50;
+  }
+
+  /* Animated mesh grid background */
+  .mesh-bg {
+    position: relative;
+    overflow: hidden;
+  }
+  .mesh-bg::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(41, 151, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(41, 151, 255, 0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    animation: grid-move 20s linear infinite;
+    pointer-events: none;
+  }
+
+  /* Glow border */
+  .glow-border {
+    @apply relative;
+    box-shadow: inset 0 0 0 1px rgba(41, 151, 255, 0.1);
+  }
+  .glow-border::after {
+    content: '';
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    background: linear-gradient(135deg, rgba(41, 151, 255, 0.15), transparent 40%, transparent 60%, rgba(6, 182, 212, 0.15));
+    pointer-events: none;
+    mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+    mask-composite: exclude;
+    -webkit-mask-composite: xor;
+    padding: 1px;
+  }
+
+  /* Status badge */
+  .badge {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium;
+  }
+  .badge-green {
+    @apply badge bg-green-500/10 text-green-400 ring-1 ring-green-500/20;
+  }
+  .badge-blue {
+    @apply badge bg-primary-500/10 text-primary-400 ring-1 ring-primary-500/20;
+  }
+  .badge-yellow {
+    @apply badge bg-yellow-500/10 text-yellow-400 ring-1 ring-yellow-500/20;
+  }
+  .badge-red {
+    @apply badge bg-red-500/10 text-red-400 ring-1 ring-red-500/20;
+  }
 }

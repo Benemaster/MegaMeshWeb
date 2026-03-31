@@ -182,31 +182,38 @@ export const WeatherMap = () => {
     : [51.1657, 10.4515];
 
   return (
-    <div className="flex h-screen flex-col bg-gray-800">
+    <div className="mesh-bg flex h-screen flex-col bg-surface">
       {/* Header */}
-      <header className="bg-gray-900 shadow">
-        <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+      <header className="relative z-10 border-b border-white/5 bg-surface-50/80 backdrop-blur-md">
+        <div className="mx-auto max-w-7xl px-4 py-3 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-100">MegaMesh Wetterkarte</h1>
-              {statusInfo && <p className="mt-1 text-xs text-primary-700">{statusInfo}</p>}
+            <div className="flex items-center gap-3">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-primary-500 to-cyber-500">
+                <svg className="h-4 w-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z" />
+                </svg>
+              </div>
+              <div>
+                <h1 className="text-lg font-bold text-white">MegaMesh Wetterkarte</h1>
+                {statusInfo && <p className="text-xs text-primary-400/80">{statusInfo}</p>}
+              </div>
             </div>
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center gap-2">
               <button
                 onClick={handleRequestWeather}
-                className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                className="btn-primary px-4 py-2 text-xs"
               >
                 Wetterdaten anfragen
               </button>
               <button
                 onClick={handleClearStations}
-                className="rounded-md bg-gray-700 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-600"
+                className="btn-secondary px-3 py-2 text-xs"
               >
-                Zurücksetzen
+                Zuruecksetzen
               </button>
               <Link
                 to="/messages"
-                className="rounded-md bg-gray-700 px-4 py-2 text-sm font-medium text-gray-300 hover:bg-gray-600"
+                className="btn-secondary px-3 py-2 text-xs"
               >
                 ← Nachrichten
               </Link>
